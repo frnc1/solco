@@ -97,6 +97,8 @@ Infila la levetta del NeoSlider da sotto nella feritoia, centrala e incolla il c
 Vedi `firmware/README.md`: si installa CircuitPython sul Pico e si copiano `boot.py` e `code.py`. Nessuna libreria aggiuntiva.
 
 ## 5. Collegare tutto
+
+![Collegamenti di un tablet: hub, jog, scheda audio e mixer](anteprime/collegamenti_tablet.png)
 Tablet → hub USB-C. Nell'hub: cavo del Pico, Behringer UCA222, caricatore. Uscita RCA della UCA222 → ingresso CD/LINE di un canale del DJM-600 (selettore del canale su CD/LINE). Il secondo tablet va su un altro canale.
 
 ## 6. Comandi
