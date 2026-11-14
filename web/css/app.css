@@ -57,18 +57,18 @@ svg { display: block; }
 #app.touch-on {
   --jog: calc(var(--u) * 462);
   grid-template-columns: minmax(0, 1fr) calc(var(--u) * 640);
-  grid-template-rows: calc(var(--u) * 44) calc(var(--u) * 64) minmax(0, 1fr) calc(var(--u) * 50) calc(var(--u) * 96) calc(var(--u) * 78) calc(var(--u) * 70) calc(var(--u) * 106);
+  grid-template-rows: calc(var(--u) * 44) calc(var(--u) * 64) minmax(0, 1fr) calc(var(--u) * 50) calc(var(--u) * 108) calc(var(--u) * 78) calc(var(--u) * 70) calc(var(--u) * 106);
   grid-template-areas: "top top" "head deck" "zoom deck" "over deck" "info deck" "hot deck" "loops deck" "trans deck";
 }
 
 @media (orientation: portrait) {
   /* verticale, jog fisica collegata */
-  #app { grid-template-rows: calc(var(--u) * 46) calc(var(--u) * 74) minmax(0, 1fr) calc(var(--u) * 60) calc(var(--u) * 120) calc(var(--u) * 80); }
+  #app { grid-template-rows: calc(var(--u) * 46) calc(var(--u) * 74) minmax(0, 1fr) calc(var(--u) * 60) calc(var(--u) * 140) calc(var(--u) * 80); }
   /* verticale con i comandi a schermo: la disposizione principale */
   #app.touch-on {
     --jog: calc(var(--u) * 598);
     grid-template-columns: 100%;
-    grid-template-rows: calc(var(--u) * 44) calc(var(--u) * 62) minmax(0, 1fr) calc(var(--u) * 48) calc(var(--u) * 96) calc(var(--u) * 74) calc(var(--u) * 66) calc(var(--u) * 606) calc(var(--u) * 100);
+    grid-template-rows: calc(var(--u) * 44) calc(var(--u) * 62) minmax(0, 1fr) calc(var(--u) * 48) calc(var(--u) * 108) calc(var(--u) * 74) calc(var(--u) * 66) calc(var(--u) * 606) calc(var(--u) * 100);
     grid-template-areas: "top" "head" "zoom" "over" "info" "hot" "loops" "deck" "trans";
   }
 }
@@ -397,3 +397,118 @@ svg { display: block; }
 .gate-logo { font-size: calc(var(--u) * 46); font-weight: 700; letter-spacing: .3em; margin-right: -.3em; }
 .gate-sub { color: var(--dim); font-size: calc(var(--u) * 15); letter-spacing: .2em; text-transform: uppercase; margin-bottom: calc(var(--u) * 18); }
 .gate-msg { color: var(--dim); font-size: calc(var(--u) * 13); min-height: 1.4em; max-width: calc(var(--u) * 520); text-align: center; }
+
+/* =====================================================================================
+   Tema "Club Flagship": plancia in metallo spazzolato, schermo OLED incassato in cornice,
+   tasti retroilluminati. Stessi ID, classi e griglia: cambia solo l'aspetto.
+   ===================================================================================== */
+:root {
+  --oled: #040507;
+  --bezel: #22262e;
+  --hw: #111317;
+  --hw-line: #2a2f3a;
+  --cold: #8b95a7;
+  --amber2: #ff9f1c;
+}
+
+/* plancia: nero antracite spazzolato in orizzontale (le sezioni dei comandi sono trasparenti,
+   così la spazzolatura continua senza giunte da una fila all'altra) */
+#app {
+  background-color: var(--hw);
+  background-image:
+    repeating-linear-gradient(180deg, rgba(255, 255, 255, .022) 0, rgba(255, 255, 255, .022) 1px, transparent 1px, transparent 3px),
+    repeating-linear-gradient(180deg, rgba(0, 0, 0, .26) 0, rgba(0, 0, 0, .26) 1px, transparent 1px, transparent 7px),
+    repeating-linear-gradient(180deg, rgba(255, 255, 255, .012) 0, rgba(255, 255, 255, .012) 2px, transparent 2px, transparent 13px),
+    linear-gradient(180deg, #16181d 0%, #111317 50%, #0d0f12 100%);
+}
+#hotcues, #loopbar, #deck, #transport, #app:not(.touch-on) #hotcues { background: transparent; border-top: 0; }
+#app:not(.touch-on) #hotcues { border-bottom: 0; }
+#app.touch-on #deck { border-left: 0; }
+
+/* schermo: nero OLED incassato in una cornice */
+#topbar, #trackHead, #zoomWrap, #overWrap, #info {
+  background: var(--oled);
+  border-left: calc(var(--u) * 6) solid var(--bezel);
+  border-right: calc(var(--u) * 6) solid var(--bezel);
+}
+#topbar { border-top: calc(var(--u) * 6) solid var(--bezel); border-bottom: 1px solid #14171c; box-shadow: inset 0 calc(var(--u) * 2) 0 #000, inset calc(var(--u) * 2) 0 0 #000, inset calc(var(--u) * -2) 0 0 #000; }
+#trackHead { border-bottom: 1px solid #14171c; box-shadow: inset calc(var(--u) * 2) 0 0 #000, inset calc(var(--u) * -2) 0 0 #000; }
+#zoomWrap, #overWrap { border-bottom: 1px solid #14171c; }
+#zoomWrap::after, #overWrap::after { content: ''; position: absolute; inset: 0; pointer-events: none; box-shadow: inset calc(var(--u) * 2) 0 0 #000, inset calc(var(--u) * -2) 0 0 #000; }
+#info { position: relative; z-index: 1; border-bottom: calc(var(--u) * 6) solid var(--bezel);
+  box-shadow: inset calc(var(--u) * 2) 0 0 #000, inset calc(var(--u) * -2) 0 0 #000, inset 0 calc(var(--u) * -2) 0 #000, 0 calc(var(--u) * 8) calc(var(--u) * 16) rgba(0, 0, 0, .65); }
+.tbtn { background: #0b0d10; border-color: var(--bezel); }
+.tbtn:active { background: #151820; }
+
+/* numeri bianchi ad alto contrasto, etichette grigio freddo */
+.title, .head-kv .v, #info .big { color: #ffffff; }
+#info .c-time.warn .big { color: var(--red); }   /* l'avviso di fine brano resta rosso */
+.artist, .head-kv .k, #info .lbl, #info .small, .jumpinfo, .top-mid, .clock { color: var(--cold); }
+#info .cell { border-right-color: #161a20; }
+/* box BPM e box del tempo */
+#info .c-tempo { border: 1px solid var(--hw-line); border-radius: calc(var(--u) * 5); margin: calc(var(--u) * 5) calc(var(--u) * 4); padding-top: calc(var(--u) * 7); padding-bottom: calc(var(--u) * 8); }
+#app.touch-on #info .c-tempo { margin: calc(var(--u) * 4); padding: calc(var(--u) * 6) calc(var(--u) * 12); }
+#info .pct { color: var(--amber2); border: 1px solid var(--hw-line); border-radius: calc(var(--u) * 3); padding: calc(var(--u) * 1) calc(var(--u) * 6); min-width: 0; }
+/* battute: rettangoli netti */
+#info .dots { gap: calc(var(--u) * 5); }
+#info .dots i { border-radius: 0; background: #12151a; box-shadow: inset 0 0 0 1px #1e222a; }
+#info .dots i.on { background: #ffffff; box-shadow: 0 0 calc(var(--u) * 6) rgba(255, 255, 255, .35); }
+#info .dots i.on.one { background: var(--amber2); box-shadow: 0 0 calc(var(--u) * 6) rgba(255, 159, 28, .5); }
+
+/* hot cue: tasti larghi e bassi, nero opaco, cornice luminosa del colore assegnato */
+#hotcues { padding-top: calc(var(--u) * 12); padding-bottom: calc(var(--u) * 10); }
+.hc { background: #16181d; border: 1px solid var(--hw-line); border-radius: calc(var(--u) * 4);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .03), 0 1px 0 rgba(0, 0, 0, .7); }
+.hc::before { display: none; }
+.hc.empty .l, .hc.empty .t { color: #565d6a; }
+.hc.set { background: #16181d; border: 2px solid var(--hc);
+  box-shadow: 0 0 calc(var(--u) * 10) color-mix(in srgb, var(--hc) 55%, transparent), inset 0 0 calc(var(--u) * 10) color-mix(in srgb, var(--hc) 26%, transparent); }
+.hc.set .l { color: var(--hc); text-shadow: 0 0 calc(var(--u) * 8) color-mix(in srgb, var(--hc) 60%, transparent); }
+.hc.set .t { color: #d3d9e2; }
+.hc.flash { box-shadow: 0 0 calc(var(--u) * 20) var(--hc), inset 0 0 calc(var(--u) * 18) color-mix(in srgb, var(--hc) 50%, transparent); }
+.hc:active { transform: none; filter: brightness(1.3); }
+
+/* loop e salti: tasti piatti retroilluminati, ambra; auto loop e reloop in verde acqua */
+#loopbar .tb {
+  --bl: var(--amber2);
+  background: color-mix(in srgb, var(--bl) 6%, #101216);
+  border: 1px solid color-mix(in srgb, var(--bl) 80%, transparent);
+  border-radius: calc(var(--u) * 5);
+  color: var(--bl);
+  text-shadow: 0 0 calc(var(--u) * 6) color-mix(in srgb, var(--bl) 45%, transparent);
+  box-shadow: inset 0 0 calc(var(--u) * 10) color-mix(in srgb, var(--bl) 12%, transparent), 0 0 calc(var(--u) * 6) color-mix(in srgb, var(--bl) 14%, transparent);
+  transform: none;
+}
+#loopbar #tAuto, #loopbar #tReloop { --bl: var(--teal); }
+#loopbar .tb.two b { color: color-mix(in srgb, var(--bl) 55%, #ffffff); }
+#loopbar .tb.tog { padding-bottom: 0; }
+#loopbar .tb.tog::after { display: none; }
+#loopbar .tb:active, #loopbar .tb.down, #loopbar .tb.tog.on {
+  background: color-mix(in srgb, var(--bl) 22%, #101216);
+  color: color-mix(in srgb, var(--bl) 40%, #ffffff);
+  box-shadow: inset 0 0 calc(var(--u) * 16) color-mix(in srgb, var(--bl) 35%, transparent), 0 0 calc(var(--u) * 12) color-mix(in srgb, var(--bl) 40%, transparent);
+  transform: none;
+}
+
+/* tasti della plancia (tempo, REV, QUANTIZE): corpo nero opaco */
+.tb { background: linear-gradient(180deg, #1c1f25, #15171c); border-color: #2c313b; border-radius: calc(var(--u) * 6); }
+.tb:active, .tb.down { background: linear-gradient(180deg, #191b20, #121418); }
+
+/* fader del tempo: fessura nera profonda, scala serigrafata bianca, zero luminoso, pomello scuro */
+.vfader { background: linear-gradient(90deg, #08090b, #111317 50%, #08090b); border: 1px solid var(--hw-line); }
+.vf-scale {
+  background:
+    repeating-linear-gradient(to bottom, rgba(242, 245, 250, .95) 0, rgba(242, 245, 250, .95) 2px, transparent 2px, transparent calc((100% - 2px) / 4)),
+    repeating-linear-gradient(to bottom, rgba(242, 245, 250, .7) 0, rgba(242, 245, 250, .7) 1px, transparent 1px, transparent calc((100% - 1px) / 20));
+}
+.vf-track { width: calc(var(--u) * 14); margin-left: calc(var(--u) * -7); border-radius: calc(var(--u) * 3); background: #000;
+  box-shadow: inset 0 calc(var(--u) * 3) calc(var(--u) * 7) #000, inset 0 0 0 1px #1c1f26; }
+.vf-center { height: 3px; margin-top: -1.5px; background: #7dffb6; opacity: 1; box-shadow: 0 0 calc(var(--u) * 8) rgba(61, 220, 132, .95), 0 0 calc(var(--u) * 2) #3ddc84; }
+.vf-fill { background: var(--amber2); opacity: .5; }
+.vf-thumb { background: linear-gradient(#30343d, #1b1e23 55%, #121418); border: 1px solid #3c414c;
+  box-shadow: 0 calc(var(--u) * 5) calc(var(--u) * 12) rgba(0, 0, 0, .75), inset 0 1px 0 rgba(255, 255, 255, .14), inset 0 -2px 0 rgba(0, 0, 0, .4); }
+.vf-thumb::after, .vfader.zero .vf-thumb::after { background: #ffffff; height: calc(var(--u) * 3); box-shadow: 0 0 calc(var(--u) * 4) rgba(255, 255, 255, .5); }
+.vfader.drag .vf-thumb { background: linear-gradient(#363b45, #1f2228 55%, #15171b); border-color: var(--amber2); }
+.vf-t, .vf-b { color: #f2f5fa; }
+.tpct { color: var(--amber2); }
+.tpct.zero { color: var(--green); }

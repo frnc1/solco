@@ -490,7 +490,7 @@
 
   function drawZoom() {
     const W = zc.width, H = zc.height, g = zx;
-    g.fillStyle = '#08090b'; g.fillRect(0, 0, W, H);
+    g.fillStyle = '#040507'; g.fillRect(0, 0, W, H);
     const cx = Math.round(W / 2);
     if (!D.track || !D.wave) {
       g.fillStyle = 'rgba(255,255,255,.06)'; g.fillRect(0, Math.round(H / 2), W, Math.max(1, Math.round(dpr)));
@@ -565,7 +565,7 @@
       g.fill();
     }
     // passato più scuro
-    g.fillStyle = 'rgba(8,9,11,.52)';
+    g.fillStyle = 'rgba(4,5,7,.55)';
     g.fillRect(0, 0, cx, H);
 
     // cue memorizzati
@@ -620,7 +620,7 @@
     const cv = document.createElement('canvas');
     cv.width = W; cv.height = H;
     const g = cv.getContext('2d');
-    g.fillStyle = '#101216'; g.fillRect(0, 0, W, H);
+    g.fillStyle = '#040507'; g.fillRect(0, 0, W, H);
     if (D.wave && D.len) {
       const w = D.wave, cols = w.lo.length;
       const mid = Math.round((H - 8 * dpr) / 2) + 1, amp = mid - 4 * dpr;
@@ -645,11 +645,11 @@
   function drawOver() {
     const W = oc.width, H = oc.height, g = ox;
     if (overBase && overBase.width === W) g.drawImage(overBase, 0, 0);
-    else { g.fillStyle = '#101216'; g.fillRect(0, 0, W, H); }
+    else { g.fillStyle = '#040507'; g.fillRect(0, 0, W, H); }
     if (!D.track || !D.len) return;
     const X = (fr) => fr / D.len * W;
     const px = X(D.posF);
-    g.fillStyle = 'rgba(10,11,13,.62)';
+    g.fillStyle = 'rgba(4,5,7,.62)';
     g.fillRect(0, 0, px, H);
     if (D.loop.in >= 0 && D.loop.out > D.loop.in) {
       g.fillStyle = D.loop.on ? 'rgba(47,208,194,.35)' : 'rgba(47,208,194,.15)';
