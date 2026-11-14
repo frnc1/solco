@@ -44,6 +44,7 @@ jobs:
         run: |
           node tests/engine.test.js
           node tests/analysis.test.js
+          python3 tests/firmware_test.py
 
       - name: Copia l'app negli asset dell'APK
         run: |
