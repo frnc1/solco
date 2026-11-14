@@ -72,7 +72,7 @@ Infila la levetta del NeoSlider da sotto nella feritoia, centrala e incolla il c
 4. PLAY e CUE sono lontani: allunga il loro filo con un WAGO 221-412 e un cavetto maschio-maschio.
 5. Manopola KY-040 con 5 cavetti femmina-maschio: CLK → GP27, DT → GP28, SW → GP22, + → 3V3, GND → GND.
 6. Tocco della jog: resistenza da 1 MΩ tra il morsetto **GP21** e il **GND** accanto; nello stesso morsetto GP21 va il cavetto che arriva dal rame del pannello.
-7. Cavo USB dal Pico fuori dalla tacca nella parete posteriore.
+7. Cavo USB dal Pico fuori dalla tacca nella parete posteriore (il supporto ha una finestrella proprio lì dietro).
 
 ![Schema dei collegamenti](anteprime/schema_collegamenti.png)
 
@@ -89,9 +89,9 @@ Infila la levetta del NeoSlider da sotto nella feritoia, centrala e incolla il c
 
 ### Chiusura e supporto
 1. Attacca 4 piedini sotto il fondo e 4 sotto il supporto del tablet (stessa altezza, così i fori combaciano).
-2. Accosta il supporto al retro della scocca e fissalo **da dentro** con **2 viti M3 × 12** attraverso le asole della parete posteriore.
-3. Chiudi il fondo con **6 viti M3 × 12**.
-4. Dentro il supporto c'è posto per hub e scheda audio.
+2. Infila la spina USB-A del cavo del Pico nella **finestrella** in basso nella parete del supporto, dalla parte della scocca. Poi accosta il supporto al retro della scocca e fissalo **da dentro** con **2 viti M3 × 12** attraverso le asole della parete posteriore: il cavo passa dalla tacca della scocca alla finestrella.
+3. Chiudi il fondo con **6 viti M3 × 12**, con il cavo USB nella tacca.
+4. Dentro il supporto c'è posto per hub e scheda audio: il cavo del Pico va nell'hub.
 
 ## 4. Programma della scheda
 Vedi `firmware/README.md`: si installa CircuitPython sul Pico e si copiano `boot.py` e `code.py`. Nessuna libreria aggiuntiva.

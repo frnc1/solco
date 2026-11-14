@@ -428,6 +428,8 @@ LARGH_SUPPORTO = 200.0
 T_PARETI_SUPP = 4.0
 X_VITI_SUPP = (40.0, 160.0)    # = FORI_SUPPORTO_X - 20 (il supporto è centrato dietro la scocca)
 Z_VITI_SUPP = 25.0
+# finestrella nella parete frontale, dietro la tacca USB della scocca: il cavo del Pico entra nel supporto
+FINESTRA_USB = (TACCA_USB[0] - 20.0 - 2.0, TACCA_USB[1] - 20.0 + 2.0, T_PARETI_SUPP, 18.0)   # x0, x1, z0, z1
 
 
 def _profilo_supporto():
@@ -463,12 +465,16 @@ def supporto_tablet():
         p.add(pz, 'x', X0, X1)
     # parete frontale e borchie per le viti, con il foro (quadrato 2,6 mm) dove serve
     h = 1.3
-    tagli = sorted([X0, X1] + [x + s for x in X_VITI_SUPP for s in (-6.0, -h, h, 6.0)])
+    fx0, fx1, fz0, fz1 = FINESTRA_USB
+    tagli = sorted([X0, X1, fx0, fx1] + [x + s for x in X_VITI_SUPP for s in (-6.0, -h, h, 6.0)])
     for a, b in zip(tagli[:-1], tagli[1:]):
         xm = (a + b) / 2
         vicino = [x for x in X_VITI_SUPP if abs(xm - x) < 6.0]
         nel_foro = [x for x in X_VITI_SUPP if abs(xm - x) < h]
-        if nel_foro:
+        if fx0 <= xm <= fx1:
+            p.add(rect(0, 0, T_PARETI_SUPP, fz0), 'x', a, b)
+            p.add(rect(0, fz1, T_PARETI_SUPP, z_fronte), 'x', a, b)
+        elif nel_foro:
             p.add(rect(0, 0, T_PARETI_SUPP, Z_VITI_SUPP - h), 'x', a, b)
             p.add(rect(0, Z_VITI_SUPP + h, T_PARETI_SUPP, z_fronte), 'x', a, b)
             p.add(rect(T_PARETI_SUPP - 0.2, Z_VITI_SUPP - 6, 14, Z_VITI_SUPP - h), 'x', a, b)
