@@ -6,38 +6,32 @@ Ogni tablet ha la sua unità: una scocca con jog, 19 pulsanti, manopola e fader 
 
 ## 1. Lista della spesa (per UNA unità: compra tutto due volte)
 
-Prezzi trovati il 14/11/2026, spedizione esclusa: possono cambiare.
+Prezzi controllati il 14/11/2026, spedizioni escluse: circa 149 € a unità per le voci con prezzo, più pulsanti e minuteria.
 
-| Cosa | Quante | Dove / prezzo indicativo |
+| Cosa | Per unità | Dove · prezzo |
 |---|---|---|
-| Raspberry Pi **Pico H** (RP2040, pin già saldati). **Non** il Pico 2: col chip RP2350 il tocco della jog non funziona | 1 | Melopero 6,10 € |
-| Adafruit **Terminal PiCowbell** con prese pre-saldate (codice 5907) | 1 | robot-domestici.it 19,38 € + IVA |
-| Adafruit **AS5600** sensore magnetico STEMMA QT (6357) | 1 | Opencircuit 10,75 € |
-| Adafruit **NeoSlider** fader 75 mm STEMMA QT (5295) | 1 | Opencircuit 16,00 € |
-| Cavo **STEMMA QT 200 mm** (Adafruit 4401) | 2 | Opencircuit 4,75 € l'uno |
-| **Magnete diametrale** Ø6 × 2,5 mm (es. Radial Magnets 9042). Deve essere *diametrale*, non uno normale | 1 (+1 scorta) | DigiKey 0,52 € |
-| **Cuscinetti 6806-2RS** (30 × 42 × 7 mm) | 2 | negozi di cuscinetti, circa 5–7 € l'uno |
-| **Pulsanti 12 mm momentanei in metallo con fili già collegati** (es. RUNCCI-YUN, fili 15 cm) | 19 | Amazon, confezioni da 5 o 10 |
-| **Encoder KY-040** (manopola con pulsante) | 1 | AZ-Delivery 4,99 € |
-| **Cavetti Dupont**: maschio-maschio (8) e femmina-maschio (5) | 13 | kit misto |
-| **Resistenza 1 MΩ** | 1 | qualsiasi kit di resistenze |
-| **WAGO 221-415** (5 posti) + **WAGO 221-412** (2 posti) | 5 + 2 | ferramenta / materiale elettrico |
-| **Nastro di rame adesivo** con colla conduttiva, largo 50 mm | ~1 m | Amazon |
-| Biadesivo **sottile** (per il sensore) e biadesivo forte tipo VHB (per il fader) | poco | ferramenta |
-| Viti **M3 × 12** (13) e **M3 × 20** (2), a testa cilindrica | 15 | kit viti M3 |
-| Piedini adesivi in gomma (alti 3–5 mm) | 8 | ferramenta |
-| Fascetta da 15–20 cm | 1 | — |
-| Cavo USB-A → micro-USB, 30–50 cm | 1 | — |
+| Raspberry Pi **Pico H** (RP2040, pin già saldati). **Non** il Pico 2: col chip RP2350 il tocco della jog non funziona | 1 | [Melopero](https://www.melopero.com/en/shop/raspberry-pi/boards/raspberry-pi-pico/) 6,10 € · [Opencircuit](https://opencircuit.shop/product/raspberry-pi-pico-h-pico-with-headers-soldered) 10,00 € |
+| Adafruit **Terminal PiCowbell** con prese pre-saldate (5907) | 1 | [Opencircuit](https://opencircuit.shop/product/adafruit-terminal-picowbell-pico-pre-soldered) 20,00 € · [robot-domestici](https://website.robot-domestici.it/product/228578-adafruit-terminal-picowbell-for-pico-with-pre-soldered-sockets) 19,38 € + IVA |
+| Adafruit **AS5600** sensore magnetico STEMMA QT (6357) | 1 | [Opencircuit](https://opencircuit.shop/product/adafruit-as5600-magnetic-angle-sensor) 11,25 € |
+| Adafruit **NeoSlider** fader 75 mm STEMMA QT (5295) | 1 | [Opencircuit](https://opencircuit.shop/product/adafruit-neoslider-i2c-qt-slide-potentiometer) 16,75 € |
+| Cavo **STEMMA QT 200 mm** (4401) | 2 | [Opencircuit](https://opencircuit.shop/product/stemma-qt-qwiic-jst-sh-4-pin-cable-200mm-long) 4,75 € l'uno |
+| **Magnete diametrale** Ø6 × 2,5 mm (Radial Magnets 9042): deve essere *diametrale* | 1 (+1 scorta) | [DigiKey](https://www.digikey.it/en/products/detail/radial-magnets-inc/9042/5640338) 0,52 € |
+| **Cuscinetto 6806-2RS** (30 × 42 × 7 mm) | 2 | [tymoty, marca EZO](https://www.tymoty.com/ezo-6806-2rs-deep-groove-ball-bearing) 12,90 € l'uno |
+| **Encoder KY-040** (manopola con pulsante) | 1 | [AZ-Delivery](https://www.az-delivery.de/en/products/drehimpulsgeber-modul) 4,99 € |
+| **Pulsanti 12 mm momentanei in metallo con 2 fili già collegati** (15 cm) | 19 | Amazon, confezioni da 5 o 10 |
+| Cavetti Dupont maschio-maschio e femmina-maschio | 8 + 5 | kit misto |
+| Resistenza da 1 MΩ | 1 | kit di resistenze |
+| WAGO 221-415 (5 posti) e 221-412 (2 posti) | 5 + 2 | materiale elettrico |
+| Nastro di rame con colla conduttiva, largo 50 mm | ~1 m | Amazon |
+| Biadesivo sottile (sensore) e biadesivo forte tipo VHB (fader) | poco | ferramenta |
+| Viti M3 × 12 e M3 × 20 a testa cilindrica | 13 + 2 | kit viti M3 |
+| Piedini adesivi in gomma alti 3–5 mm | 8 | ferramenta |
+| Fascetta da 15–20 cm e cavo USB-A → micro-USB da 30–50 cm | 1 + 1 | — |
+| **Behringer UCA222**: scheda audio USB con uscite RCA | 1 | [Thomann](https://www.thomann.de/be/behringer_ucontrol_uca_222.htm) 19,90 € |
+| **Hub USB-C** con ricarica PD e porte dati USB-A, es. UGREEN Revodok Pro 106 | 1 | [UGREEN](https://eu.ugreen.com/collections/product/products/45363) 29,99 € |
+| Cavo RCA–RCA verso il DJM-600 e caricatore USB-C del tablet | 1 + 1 | — |
 
-Per suonare dal mixer (sempre per tablet):
-
-| Cosa | Dove / prezzo indicativo |
-|---|---|
-| **Behringer UCA222** (scheda audio USB con uscite RCA) | Thomann 19,90 € |
-| **Hub USB-C** con ingresso di ricarica PD e almeno 2 porte dati (es. UGREEN Revodok 106 o 108) | UGREEN 24,99–29,99 € |
-| Cavo RCA–RCA verso il DJM-600 e il caricatore USB-C del tablet | — |
-
-Il tablet ha una sola presa USB-C: l'hub ci collega insieme la jog (Pico), la scheda audio e il caricatore.
+Da Opencircuit (Paesi Bassi) Pico H, PiCowbell, AS5600, NeoSlider e cavi arrivano con un solo ordine: 135 € per due unità. Il tablet ha una sola presa USB-C: l'hub ci collega insieme jog, scheda audio e caricatore.
 
 ## 2. Stampa (Bambu Lab P2S)
 
