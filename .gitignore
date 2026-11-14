@@ -1,0 +1,15 @@
+android/.gradle/
+android/build/
+android/app/build/
+android/app/src/main/assets/web/
+android/local.properties
+dist/
+tests/shots/
+tests/media/*.wav
+tests/media/*.aiff
+tests/media/*.flac
+tests/media/*.m4a
+tests/media/*.mp3
+tests/media/*.jpg
+__pycache__/
+*.pyc

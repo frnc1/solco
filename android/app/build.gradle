@@ -1,0 +1,39 @@
+plugins {
+    id 'com.android.application'
+}
+
+def buildNumber = Integer.parseInt((project.findProperty('versionCode') ?: '1').toString())
+
+android {
+    namespace 'it.solco.player'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'it.solco.player'
+        minSdk 26
+        targetSdk 35
+        versionCode buildNumber
+        versionName '1.0.' + buildNumber
+    }
+
+    signingConfigs {
+        release {
+            storeFile rootProject.file('solco.jks')
+            storePassword 'solco-player'
+            keyAlias 'solco'
+            keyPassword 'solco-player'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

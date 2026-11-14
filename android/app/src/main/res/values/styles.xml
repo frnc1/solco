@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="solco_bg">#FF0A0B0D</color>
+    <style name="SolcoTheme" parent="android:Theme.Material.NoActionBar.Fullscreen">
+        <item name="android:windowBackground">@color/solco_bg</item>
+        <item name="android:colorBackground">@color/solco_bg</item>
+        <item name="android:statusBarColor">@color/solco_bg</item>
+        <item name="android:navigationBarColor">@color/solco_bg</item>
+    </style>
+</resources>

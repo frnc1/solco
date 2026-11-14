@@ -1,0 +1,60 @@
+name: APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+
+      - name: Test del motore audio e dell'analisi
+        run: |
+          node tests/engine.test.js
+          node tests/analysis.test.js
+
+      - name: Copia l'app negli asset dell'APK
+        run: |
+          rm -rf android/app/src/main/assets/web
+          mkdir -p android/app/src/main/assets
+          cp -r web android/app/src/main/assets/web
+          rm -f android/app/src/main/assets/web/sw.js
+
+      - name: Compila l'APK
+        working-directory: android
+        run: gradle --no-daemon --stacktrace assembleRelease -PversionCode=${{ github.run_number }}
+
+      - name: Prepara il file
+        run: cp android/app/build/outputs/apk/release/app-release.apk solco.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: solco-apk
+          path: solco.apk
+
+      - name: Pubblica la versione
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: SOLCO 1.0.${{ github.run_number }}
+          body: |
+            Scarica **solco.apk** dal tablet e aprilo per installarlo (la prima volta Android chiede di permettere l'installazione da questa fonte).
+          files: solco.apk
+          make_latest: true
