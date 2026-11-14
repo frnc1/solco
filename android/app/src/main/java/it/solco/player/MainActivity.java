@@ -3,6 +3,7 @@ package it.solco.player;
 import android.app.Activity;
 import android.content.ClipData;
 import android.content.Intent;
+import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.media.midi.MidiDevice;
 import android.media.midi.MidiDeviceInfo;
@@ -50,6 +51,7 @@ public class MainActivity extends Activity {
     private static final String HOST = "appassets.androidplatform.net";
     private static final String START = "https://" + HOST + "/index.html";
     private static final int PICK_FILES = 7;
+    private static final String PREFS = "solco";
 
     private WebView web;
     private ValueCallback<Uri[]> fileCallback;
@@ -64,6 +66,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
+        // orientamento scelto nelle impostazioni dell'app (di serie: verticale, con la jog grande)
+        applyOrientation(getSharedPreferences(PREFS, MODE_PRIVATE).getString("orient", "portrait"));
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
         web = new WebView(this);
@@ -194,6 +198,16 @@ public class MainActivity extends Activity {
             return;
         }
         super.onActivityResult(requestCode, resultCode, data);
+    }
+
+    /* ---------------- orientamento bloccato ---------------- */
+
+    private void applyOrientation(String o) {
+        int v;
+        if ("landscape".equals(o)) v = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE;
+        else if ("auto".equals(o)) v = ActivityInfo.SCREEN_ORIENTATION_FULL_USER;
+        else v = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT;
+        if (getRequestedOrientation() != v) setRequestedOrientation(v);
     }
 
     /* ---------------- schermo intero e tasto Indietro ---------------- */
@@ -383,6 +397,14 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public String version() {
             return "android";
+        }
+
+        @JavascriptInterface
+        public void setOrientation(final String o) {
+            ui.post(() -> {
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString("orient", o).apply();
+                applyOrientation(o);
+            });
         }
 
         @JavascriptInterface

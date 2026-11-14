@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<meta name="theme-color" content="#0a0b0d">
+<meta name="theme-color" content="#07080a">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="color-scheme" content="dark">
 <title>SOLCO</title>
@@ -75,33 +75,46 @@
 
   <section id="hotcues"></section>
 
-  <section id="touchbar">
-    <div class="tb-main">
-      <button id="tCue" class="tb big cue">CUE</button>
-      <button id="tPlay" class="tb big play"><svg viewBox="0 0 24 24"><path d="M6 4l9 8-9 8z" fill="currentColor"/><path d="M16 5v14M20 5v14" stroke="currentColor" stroke-width="2.4"/></svg></button>
+  <!-- comandi a schermo: loop, jog, tempo, trasporto -->
+  <section id="loopbar" class="touch-only">
+    <button id="tIn" class="tb">IN</button>
+    <button id="tOut" class="tb">OUT</button>
+    <button id="tReloop" class="tb tog led-teal">RELOOP</button>
+    <button id="tAuto" class="tb tog led-teal two"><span>AUTO</span><b id="tAutoN">4</b></button>
+    <button id="tHalf" class="tb">½</button>
+    <button id="tDouble" class="tb">×2</button>
+    <button id="tJumpB" class="tb two"><span>◀ JUMP</span><b id="tJumpBN">16</b></button>
+    <button id="tJumpF" class="tb two"><span>JUMP ▶</span><b id="tJumpFN">16</b></button>
+  </section>
+
+  <section id="deck" class="touch-only">
+    <div id="jogWrap">
+      <canvas id="jog"></canvas>
+      <button id="tVinyl" class="cb tl tog led-amber"><span>VINILE</span></button>
+      <button id="tSlip" class="cb tr tog led-green"><span>SLIP</span></button>
+      <button id="tNudgeL" class="cb bl"><svg viewBox="0 0 24 24"><path d="M15 5l-8 7 8 7z" fill="currentColor"/></svg><small>SPINGI</small></button>
+      <button id="tNudgeR" class="cb br"><svg viewBox="0 0 24 24"><path d="M9 5l8 7-8 7z" fill="currentColor"/></svg><small>SPINGI</small></button>
     </div>
-    <div class="tb-grid">
-      <button id="tNudgeL" class="tb">◀ SPINGI</button>
-      <button id="tNudgeR" class="tb">SPINGI ▶</button>
-      <button id="tRev" class="tb tog">REV</button>
-      <button id="tSlip" class="tb tog">SLIP</button>
-      <button id="tIn" class="tb">IN</button>
-      <button id="tOut" class="tb">OUT</button>
-      <button id="tReloop" class="tb">RELOOP</button>
-      <button id="tAuto" class="tb">AUTO</button>
-      <button id="tHalf" class="tb">½</button>
-      <button id="tDouble" class="tb">×2</button>
-      <button id="tJumpB" class="tb">◀ JUMP</button>
-      <button id="tJumpF" class="tb">JUMP ▶</button>
-    </div>
-    <div class="tb-tempo">
-      <div class="tempo-top">
-        <button id="tRange" class="tb small">±10%</button>
-        <button id="tKL" class="tb small tog">KEY LOCK</button>
-        <button id="tReset" class="tb small">TEMPO 0</button>
+    <div id="tempoCol">
+      <button id="tRange" class="tb small">±10%</button>
+      <button id="tKL" class="tb small tog led-cyan two"><span>KEY</span><span>LOCK</span></button>
+      <div id="tFader" class="vfader">
+        <div class="vf-scale"></div>
+        <div class="vf-track"><div class="vf-center"></div><div id="tFaderFill" class="vf-fill"></div></div>
+        <div id="tThumb" class="vf-thumb"></div>
+        <span class="vf-t">−</span><span class="vf-b">+</span>
       </div>
-      <div id="tFader" class="hfader"><div class="hf-track"><div class="hf-center"></div><div id="tFaderFill" class="hf-fill"></div></div><div id="tThumb" class="hf-thumb"></div><span class="hf-l">−</span><span class="hf-r">+</span></div>
+      <div id="tPct" class="tpct">0.00%</div>
+      <button id="tReset" class="tb small two"><span>TEMPO</span><span>0</span></button>
     </div>
+  </section>
+
+  <section id="transport" class="touch-only">
+    <button id="tCue" class="trb cue">CUE</button>
+    <button id="tPlay" class="trb play"><svg viewBox="0 0 24 24"><path d="M5 4.5l9 7.5-9 7.5z" fill="currentColor"/><path d="M16.5 5v14M20.5 5v14" stroke="currentColor" stroke-width="2.4"/></svg></button>
+    <span class="trgap"></span>
+    <button id="tRev" class="tb tog led-red">REV</button>
+    <button id="tQuant" class="tb tog led-amber">QUANTIZE</button>
   </section>
 
   <!-- browser dei brani -->

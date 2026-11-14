@@ -1,6 +1,6 @@
 # SOLCO — lettore per DJ su tablet
 
-Un tablet Android diventa un lettore da collegare al mixer: forma d'onda, BPM e tonalità rilevati in automatico, cue, hot cue, loop, key lock, slip, reverse e scratch con una jog fisica.
+Un tablet Android diventa un lettore da collegare al mixer: forma d'onda, BPM e tonalità rilevati in automatico, cue, hot cue, loop, key lock, slip, reverse e scratch con la jog sullo schermo o con una jog fisica.
 
 ## Installare l'app sul tablet
 
@@ -10,9 +10,18 @@ Un tablet Android diventa un lettore da collegare al mixer: forma d'onda, BPM e 
 
 Per aggiornare basta installare il nuovo `solco.apk` sopra quello vecchio: libreria, cue e impostazioni restano.
 
+## Comandi a schermo
+
+Senza la jog fisica collegata l'app mostra tutti i comandi sullo schermo. In **verticale** (di serie) la disposizione è quella di un lettore da club: schermo sopra, hot cue e loop, jog al centro, fader del tempo a destra, CUE e PLAY in basso a sinistra.
+
+- **Jog**: il bordo accelera o frena il brano in onda (in pausa sposta il punto e lo fa sentire). In modo **VINILE**, toccando il centro fermi il brano sotto il dito e girando fai scratch; un giro vale 1,8 s di brano, come un 33 giri. I tasti ◀ ▶ accanto alla jog spingono a velocità costante.
+- **Fader del tempo**: si sposta solo trascinandolo, mai di colpo nel punto toccato (− in alto, + in basso). **TEMPO 0** va tenuto premuto. Cambiando il range (±6…50%) il tempo resta lo stesso.
+- **Orientamento**: bloccato, così il tablet non gira da solo durante la serata. Si cambia da *Impostazioni → Schermo → Orientamento* (verticale, orizzontale o automatico).
+
 ## Collegamenti
 
-- **Hub USB-C** nel tablet, e nell'hub: la jog SOLCO, una scheda audio USB (es. Behringer UCA222) e il caricatore.
+- **Solo comandi a schermo**: basta un cavo **USB-C → RCA con DAC integrato** (i tablet Samsung recenti non hanno il jack e con un cavo senza DAC non esce suono). Il cavo occupa l'unica presa del tablet, quindi durante il set non si ricarica.
+- **Con la jog fisica**: **hub USB-C** nel tablet, e nell'hub: la jog SOLCO, una scheda audio USB (es. Behringer UCA222) e il caricatore.
 - **Audio:** uscita RCA della scheda audio → ingresso CD/LINE di un canale del mixer.
 - **Jog e comandi fisici:** l'app riconosce da sola la jog SOLCO; altri controller MIDI si assegnano da *Impostazioni → Comandi*.
 
@@ -26,7 +35,7 @@ Tutto in `hardware/`: lista della spesa senza saldature, piatti `.3mf` pronti pe
 |---|---|
 | `web/` | L'app vera e propria (HTML, CSS, JavaScript). Motore audio in AudioWorklet (`js/worklet.js`), analisi dei brani in un Web Worker (`js/analysis.js`). |
 | `android/` | Contenitore Android: WebView a schermo intero, comandi MIDI via USB, selettore dei file. |
-| `tests/` | Test del motore audio e dell'analisi (`node tests/engine.test.js`, `node tests/analysis.test.js`) e del firmware (`python3 tests/firmware_test.py`). |
+| `tests/` | Test del motore audio e dell'analisi (`node tests/engine.test.js`, `node tests/analysis.test.js`), del firmware (`python3 tests/firmware_test.py`) e dell'interfaccia in Chrome headless, jog a schermo compresa (`python3 tests/ui_jog_test.py`). |
 | `hardware/` | Pezzi da stampare (`stampa/`), anteprime, generatore dei modelli (`cad/`). |
 | `firmware/` | Programma CircuitPython per il Pico H della jog. |
 | `.github/workflows/apk.yml` | Ogni modifica sul ramo `main` compila un nuovo `solco.apk` e lo pubblica tra le Releases. |

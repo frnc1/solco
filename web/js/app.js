@@ -11,7 +11,7 @@
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const normTxt = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
-  const VERSION = '1.0.0';
+  const VERSION = '1.1.0';
   const LETTERS = 'ABCDEFGH';
   const HOT_COLORS = ['#ff4d5e', '#ff9f1c', '#ffd23f', '#34d77b', '#2fd0c2', '#4c8dff', '#8b6bff', '#ff5fb4'];
   const RANGES = [6, 8, 10, 16, 50];
@@ -28,7 +28,7 @@
     deck: 1, jogMode: 'vinyl', secPerRev: 1.8, nudgeGain: 0.12, brakeSec: 0, startSec: 0,
     rangeIdx: 2, keyLock: false, quantize: true, jumpBeats: 16, loopBeats: 4, autoCue: true,
     invertFader: false, needle: 'paused', timeMode: 'remain', palette: 'solco', endWarn: 30,
-    touchControls: 'auto', zoomSec: 6, ticksPerRev: 2048, sort: 'added',
+    touchControls: 'auto', zoomSec: 6, ticksPerRev: 2048, sort: 'added', orient: 'portrait',
   };
   let S = Object.assign({}, DEFAULTS);
 
@@ -141,7 +141,7 @@
     saveSetT = setTimeout(() => lib.setKV('settings', S).catch(() => {}), 300);
   }
   function applySetting(k) {
-    if (k === 'deck') $('#deckName').textContent = 'DECK ' + S.deck;
+    if (k === 'deck') { $('#deckName').textContent = 'DECK ' + S.deck; buildJog(); }
     if (['secPerRev', 'nudgeGain', 'brakeSec', 'startSec'].includes(k)) sendParams();
     if (k === 'rangeIdx') { sendTempo(); updateTempoUI(); }
     if (k === 'keyLock') { engine.send({ t: 'keyLock', on: S.keyLock }); updateTempoUI(); }
@@ -150,8 +150,20 @@
     if (k === 'ticksPerRev') midi.ticksPerRev = S.ticksPerRev;
     if (k === 'quantize' || k === 'jogMode') updateChips();
     if (k === 'jumpBeats' || k === 'loopBeats') updateChips();
+    if (k === 'orient') applyOrientation();
   }
-  function setS(k, v) { S[k] = v; saveSettings(); applySetting(k); }
+  function setS(k, v) {
+    // cambiando il range del fader il tempo resta quello di prima (il fader si sposta)
+    if (k === 'rangeIdx' && v !== S.rangeIdx) {
+      D.pitch = clamp(D.pitch * RANGES[S.rangeIdx] / RANGES[v], -1, 1);
+      if (midi.devices.length) D.softTakeover = true;
+    }
+    S[k] = v; saveSettings(); applySetting(k);
+  }
+  function applyOrientation() {
+    const o = S.orient || 'portrait';
+    if (window.SolcoAndroid && window.SolcoAndroid.setOrientation) { try { window.SolcoAndroid.setOrientation(o); } catch (e) { /* versione vecchia dell'app */ } }
+  }
   function sendParams() { engine.send({ t: 'params', secPerRev: S.secPerRev, nudgeGain: S.nudgeGain, brakeSec: S.brakeSec, startSec: S.startSec }); }
   function sendTempo() { engine.send({ t: 'tempo', v: tempoFactor() }); }
 
@@ -332,12 +344,12 @@
     D.pitch = n; sendTempo(); updateTempoUI();
   }
   function tempoReset() { setPitch(0); D.softTakeover = true; toast('Tempo a zero'); }
-  function cycleRange() { setS('rangeIdx', (S.rangeIdx + 1) % RANGES.length); toast('Range tempo ±' + RANGES[S.rangeIdx] + '%'); }
+  function cycleRange() { setS('rangeIdx', (S.rangeIdx + 1) % RANGES.length); toast('Range tempo ±' + RANGES[S.rangeIdx] + '%: il tempo non cambia'); }
   function toggleKeyLock() { setS('keyLock', !S.keyLock); }
   function toggleReverse() { D.reverse = !D.reverse; engine.send({ t: 'reverse', on: D.reverse }); updateChips(); }
   function toggleSlip() { D.slip = !D.slip; engine.send({ t: 'slip', on: D.slip }); updateChips(); }
   function toggleQuantize() { setS('quantize', !S.quantize); }
-  function toggleJogMode() { setS('jogMode', S.jogMode === 'vinyl' ? 'cdj' : 'vinyl'); toast(S.jogMode === 'vinyl' ? 'Jog: vinile (scratch)' : 'Jog: CDJ (solo spinta)'); }
+  function toggleJogMode() { setS('jogMode', S.jogMode === 'vinyl' ? 'cdj' : 'vinyl'); toast(S.jogMode === 'vinyl' ? 'Jog: vinile, toccando il centro fai scratch' : 'Jog: solo spinta'); }
 
   function loopIn() { if (D.track) engine.send({ t: 'loopInNow', q: S.quantize }); }
   function loopOut() { if (D.track) engine.send({ t: 'loopOutNow', q: S.quantize }); }
@@ -371,7 +383,10 @@
     pauseAt(D.cue);
   }
   function jog(d) { if (D.track) engine.send({ t: 'jog', d }); }
-  function jogTouch(on) { if (D.track && S.jogMode === 'vinyl') engine.send({ t: 'touch', on: !!on }); }
+  function jogTouch(on) {
+    if (!D.track || (on && S.jogMode !== 'vinyl')) return;
+    engine.send({ t: 'touch', on: !!on });
+  }
 
   let saveCueT = 0;
   function saveCuesSoon() {
@@ -427,19 +442,22 @@
   function updateTouchVisibility() {
     const on = S.touchControls === 'on' || (S.touchControls === 'auto' && midi.devices.length === 0);
     $('#app').classList.toggle('touch-on', on);
+    jogVisible = on;
     requestAnimationFrame(resize);
   }
 
   /* ------------------------------ disegno ------------------------------ */
   const zc = $('#zoom'), zx = zc.getContext('2d', { alpha: false });
   const oc = $('#over'), ox = oc.getContext('2d', { alpha: false });
+  const jc = $('#jog'), jx = jc.getContext('2d');
+  const portraitMQ = window.matchMedia('(orientation: portrait)');
   let dpr = 1, U = 1, overBase = null;
   let bandBuf = [new Float32Array(8), new Float32Array(8), new Float32Array(8)];
 
   function resize() {
     dpr = Math.min(2.5, window.devicePixelRatio || 1);
-    U = Math.min(window.innerHeight, window.innerWidth * 0.625) / 800;
-    for (const c of [zc, oc]) {
+    U = (portraitMQ.matches ? Math.min(window.innerWidth, window.innerHeight * 0.625) : Math.min(window.innerHeight, window.innerWidth * 0.625)) / 800;
+    for (const c of [zc, oc, jc]) {
       const r = c.getBoundingClientRect();
       const w = Math.max(1, Math.round(r.width * dpr)), h = Math.max(1, Math.round(r.height * dpr));
       if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
@@ -447,8 +465,11 @@
     const n = Math.ceil(zc.width / Math.max(1, Math.round(dpr))) + 3;
     if (bandBuf[0].length < n) bandBuf = [new Float32Array(n), new Float32Array(n), new Float32Array(n)];
     buildOverview();
+    if (jc.width !== jogBuiltW) buildJog();
+    updateTempoUI();
   }
-  new ResizeObserver(() => resize()).observe($('#zoomWrap'));
+  const ro = new ResizeObserver(() => resize());
+  ro.observe($('#zoomWrap')); ro.observe($('#jogWrap'));
   window.addEventListener('resize', resize);
 
   function sampleBand(arr, c, cpp, cols) {
@@ -697,6 +718,9 @@
     setTxt('loopTxt', lt);
     const lc = $('#loopChip');
     if (lc.classList.contains('on') !== D.loop.on) lc.classList.toggle('on', D.loop.on);
+    const ta = $('#tAuto'), tr = $('#tReloop'), canRe = !D.loop.on && D.loop.in >= 0 && D.loop.out > D.loop.in;
+    if (ta.classList.contains('on') !== D.loop.on) ta.classList.toggle('on', D.loop.on);
+    if (tr.classList.contains('on') !== canRe) tr.classList.toggle('on', canRe);
   }
   function beatsLabel(b) {
     if (b === 0.25) return '¼ BEAT';
@@ -715,29 +739,38 @@
     setTxt('tRange', '±' + r + '%');
     $('#klChip').classList.toggle('on', S.keyLock);
     $('#tKL').classList.toggle('on', S.keyLock);
-    // fader a schermo
+    // fader a schermo (verticale: − in alto, + in basso)
     const f = (D.pitch + 1) / 2;
-    $('#tThumb').style.left = 'calc(var(--u) * 26 + (100% - var(--u) * 52) * ' + f + ')';
+    $('#tThumb').style.top = 'calc(var(--u) * 34 + (100% - var(--u) * 68) * ' + f + ')';
     const fill = $('#tFaderFill');
-    fill.style.left = Math.min(50, f * 100) + '%';
-    fill.style.width = Math.abs(f * 100 - 50) + '%';
+    fill.style.top = Math.min(50, f * 100) + '%';
+    fill.style.height = Math.abs(f * 100 - 50) + '%';
+    setTxt('tPct', (pct > 0 ? '+' : pct < 0 ? '−' : '') + Math.abs(pct).toFixed(2) + '%');
+    $('#tPct').classList.toggle('zero', D.pitch === 0);
+    $('#tFader').classList.toggle('zero', D.pitch === 0);
   }
   function updateChips() {
     $('#chQuant').classList.toggle('on', S.quantize);
     $('#chSlip').classList.toggle('on', D.slip);
     $('#chRev').classList.toggle('on', D.reverse);
     const v = $('#chVinyl');
-    v.textContent = S.jogMode === 'vinyl' ? 'VINILE' : 'CDJ';
+    v.textContent = S.jogMode === 'vinyl' ? 'VINILE' : 'SPINTA';
     v.classList.toggle('on', true);
     $('#tRev').classList.toggle('on', D.reverse);
     $('#tSlip').classList.toggle('on', D.slip);
+    $('#tVinyl').classList.toggle('on', S.jogMode === 'vinyl');
+    $('#tQuant').classList.toggle('on', S.quantize);
+    const lb = S.loopBeats === 0.5 ? '½' : S.loopBeats === 0.25 ? '¼' : String(S.loopBeats);
     setTxt('jumpTxt', String(S.jumpBeats));
-    setTxt('autoTxt', S.loopBeats === 0.5 ? '½' : S.loopBeats === 0.25 ? '¼' : String(S.loopBeats));
+    setTxt('autoTxt', lb);
+    setTxt('tAutoN', lb);
+    setTxt('tJumpBN', String(S.jumpBeats));
+    setTxt('tJumpFN', String(S.jumpBeats));
   }
   function updateTransport() {
-    const blink = D.playing ? false : true;
     $('#tPlay').classList.toggle('lit', D.playing);
-    $('#tCue').classList.toggle('lit', !D.playing && !!D.track && blink);
+    $('#tPlay').classList.toggle('wait', !D.playing && !!D.track);
+    $('#tCue').classList.toggle('lit', !D.playing && !!D.track);
   }
   function renderTrackHead() {
     const t = D.track;
@@ -779,7 +812,7 @@
       b.classList.toggle('set', !!h);
       b.classList.toggle('empty', !h);
       b.style.setProperty('--hc', h ? HOT_COLORS[h.c != null ? h.c : i] : 'transparent');
-      b.querySelector('.t').textContent = h ? (h.n || fmtT(h.t, true)) : (D.track ? 'tocca per salvare' : '');
+      b.querySelector('.t').textContent = h ? (h.n || fmtT(h.t, true)) : (D.track ? '+ salva' : '');
     }
   }
   function flashHot(i) {
@@ -813,21 +846,200 @@
   const nudgeStop = () => clearInterval(nudgeT);
   hold($('#tNudgeL'), () => nudgeStart(-1), nudgeStop);
   hold($('#tNudgeR'), () => nudgeStart(1), nudgeStop);
-  tap('#tRev', toggleReverse); tap('#tSlip', toggleSlip);
+  tap('#tRev', toggleReverse); tap('#tSlip', toggleSlip); tap('#tVinyl', toggleJogMode); tap('#tQuant', toggleQuantize);
   tap('#tIn', loopIn); tap('#tOut', loopOut); tap('#tReloop', reloop); tap('#tAuto', autoLoop);
   tap('#tHalf', () => loopScale(0.5)); tap('#tDouble', () => loopScale(2));
   tap('#tJumpB', () => beatJump(-1)); tap('#tJumpF', () => beatJump(1));
-  tap('#tRange', cycleRange); tap('#tKL', toggleKeyLock); tap('#tReset', () => { setPitch(0); });
+  tap('#tRange', cycleRange); tap('#tKL', toggleKeyLock);
+  // TEMPO 0 solo tenendo premuto: un tocco per sbaglio non cambia il tempo del brano in onda
+  {
+    const b = $('#tReset');
+    let t = 0, fired = false;
+    b.addEventListener('pointerdown', (e) => {
+      e.preventDefault(); b.classList.add('down'); fired = false;
+      clearTimeout(t); t = setTimeout(() => { fired = true; tempoReset(); }, 450);
+    });
+    const end = (e) => {
+      if (!b.classList.contains('down')) return;
+      b.classList.remove('down'); clearTimeout(t);
+      if (!fired && e.type === 'pointerup') toast('Tieni premuto TEMPO 0 per azzerare il tempo');
+    };
+    b.addEventListener('pointerup', end);
+    b.addEventListener('pointercancel', end);
+  }
+  // fader del tempo: si sposta solo trascinandolo, mai di colpo nel punto toccato
   {
     const fader = $('#tFader');
-    const setFrom = (e) => {
-      const r = fader.getBoundingClientRect(), pad = 26 * U;
-      const f = clamp((e.clientX - r.left - pad) / (r.width - 2 * pad), 0, 1);
-      setPitch(f * 2 - 1);
-    };
-    fader.addEventListener('pointerdown', (e) => { fader.setPointerCapture(e.pointerId); setFrom(e); });
-    fader.addEventListener('pointermove', (e) => { if (fader.hasPointerCapture(e.pointerId)) setFrom(e); });
+    let drag = null;
+    fader.addEventListener('pointerdown', (e) => {
+      if (drag) return;
+      e.preventDefault();
+      fader.setPointerCapture(e.pointerId);
+      const r = fader.getBoundingClientRect();
+      drag = { id: e.pointerId, y: e.clientY, p: D.pitch, h: Math.max(20, r.height - 68 * U) };
+      fader.classList.add('drag');
+    });
+    fader.addEventListener('pointermove', (e) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      setPitch(drag.p + (e.clientY - drag.y) / drag.h * 2);
+    });
+    const end = (e) => { if (drag && e.pointerId === drag.id) { drag = null; fader.classList.remove('drag'); } };
+    fader.addEventListener('pointerup', end);
+    fader.addEventListener('pointercancel', end);
   }
+
+  /* ------------------------------ jog a schermo ------------------------------ */
+  // Piatto (centro): in modo vinile il tocco ferma il brano sotto il dito e girando fai scratch.
+  // Anello (bordo): accelera o frena il brano in onda; in pausa sposta il punto e lo fa sentire.
+  // Un giro della jog vale S.secPerRev secondi di brano: con 1,8 s il piatto gira come un 33 giri.
+  const JOG_TOP = 0.765, JOG_RING_IN = 0.785;
+  const J = { id: null, zone: null, a: 0, top: false };
+  let jogRing = null, jogPlatter = null, jogSheen = null, jogBuiltW = 0, jogVisible = false;
+
+  function buildJog() {
+    const W = jc.width;
+    jogBuiltW = W;
+    if (W < 40) { jogRing = jogPlatter = jogSheen = null; return; }
+    const c = W / 2, R = c * 0.985, TAU = Math.PI * 2;
+    const mk = () => { const cv = document.createElement('canvas'); cv.width = W; cv.height = W; return cv; };
+
+    // anello fisso con la cornice
+    const rc = mk();
+    let g = rc.getContext('2d');
+    g.fillStyle = 'rgba(0,0,0,.55)'; g.beginPath(); g.arc(c, c + R * 0.012, R, 0, TAU); g.fill();
+    let gr = g.createRadialGradient(c, c, R * 0.9, c, c, R);
+    gr.addColorStop(0, '#1b1e23'); gr.addColorStop(0.72, '#2d3139'); gr.addColorStop(1, '#0e1013');
+    g.fillStyle = gr; g.beginPath(); g.arc(c, c, R, 0, TAU); g.fill();
+    const cg = g.createConicGradient(-Math.PI / 4, c, c);
+    [['#2a2e35', 0], ['#4b515c', 0.125], ['#25292f', 0.25], ['#3d424c', 0.375], ['#2a2e35', 0.5], ['#4b515c', 0.625], ['#25292f', 0.75], ['#3d424c', 0.875], ['#2a2e35', 1]]
+      .forEach(([col, t]) => cg.addColorStop(t, col));
+    g.fillStyle = cg; g.beginPath(); g.arc(c, c, R * 0.955, 0, TAU); g.arc(c, c, R * JOG_RING_IN, 0, TAU, true); g.fill();
+    g.strokeStyle = 'rgba(8,9,11,.6)';
+    for (let i = 0; i < 120; i++) {
+      const a = i / 120 * TAU, long = i % 10 === 0;
+      g.lineWidth = Math.max(1, R * (long ? 0.008 : 0.0045));
+      const r0 = R * (long ? 0.875 : 0.9), r1 = R * 0.935;
+      g.beginPath(); g.moveTo(c + Math.cos(a) * r0, c + Math.sin(a) * r0); g.lineTo(c + Math.cos(a) * r1, c + Math.sin(a) * r1); g.stroke();
+    }
+    g.strokeStyle = 'rgba(0,0,0,.75)'; g.lineWidth = Math.max(2, R * 0.016);
+    g.beginPath(); g.arc(c, c, R * JOG_RING_IN, 0, TAU); g.stroke();
+    jogRing = rc;
+
+    // piatto che gira con il brano: solchi, etichetta e segno di posizione
+    const pc = mk();
+    g = pc.getContext('2d');
+    const rp = R * JOG_TOP;
+    g.fillStyle = '#0a0b0d'; g.beginPath(); g.arc(c, c, rp, 0, TAU); g.fill();
+    let seed = 7;
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const step = Math.max(1.5, W / 480);
+    g.lineWidth = Math.max(1, step * 0.55);
+    for (let r = R * 0.35; r < rp - step * 2; r += step) {
+      const k = r / R, gap = (k > 0.5 && k < 0.515) || (k > 0.635 && k < 0.648);
+      g.strokeStyle = gap ? 'rgba(255,255,255,.012)' : 'rgba(255,255,255,' + (0.028 + rnd() * 0.035).toFixed(3) + ')';
+      g.beginPath(); g.arc(c, c, r, 0, TAU); g.stroke();
+    }
+    g.strokeStyle = '#23262c'; g.lineWidth = Math.max(2, R * 0.012);
+    g.beginPath(); g.arc(c, c, rp - g.lineWidth / 2, 0, TAU); g.stroke();
+    const rl = R * 0.33;
+    gr = g.createRadialGradient(c, c - rl * 0.45, rl * 0.1, c, c, rl);
+    gr.addColorStop(0, '#262a31'); gr.addColorStop(1, '#131519');
+    g.fillStyle = gr; g.beginPath(); g.arc(c, c, rl, 0, TAU); g.fill();
+    g.strokeStyle = 'rgba(255,255,255,.10)'; g.lineWidth = Math.max(1, R * 0.004);
+    [0.97, 0.66].forEach((k) => { g.beginPath(); g.arc(c, c, rl * k, 0, TAU); g.stroke(); });
+    g.strokeStyle = '#ffb020'; g.lineCap = 'round'; g.lineWidth = Math.max(2, R * 0.02);
+    g.beginPath(); g.arc(c, c, rl * 0.82, -Math.PI / 2, 0); g.stroke();
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = '#eef1f5'; g.font = '700 ' + Math.round(R * 0.072) + 'px SolcoInter, sans-serif';
+    if ('letterSpacing' in g) g.letterSpacing = Math.round(R * 0.016) + 'px';
+    g.fillText('SOLCO', c + (('letterSpacing' in g) ? R * 0.008 : 0), c + rl * 0.4);
+    g.fillStyle = '#8c939e'; g.font = '600 ' + Math.round(R * 0.042) + 'px SolcoInter, sans-serif';
+    g.fillText('DECK ' + S.deck, c + (('letterSpacing' in g) ? R * 0.008 : 0), c - rl * 0.4);
+    if ('letterSpacing' in g) g.letterSpacing = '0px';
+    g.fillStyle = '#c9ced6'; g.beginPath(); g.arc(c, c, R * 0.03, 0, TAU); g.fill();
+    g.fillStyle = '#5d636e'; g.beginPath(); g.arc(c, c, R * 0.013, 0, TAU); g.fill();
+    g.lineCap = 'round'; g.strokeStyle = 'rgba(255,255,255,.95)'; g.lineWidth = Math.max(2, R * 0.017);
+    g.beginPath(); g.moveTo(c, c - rl * 1.1); g.lineTo(c, c - rp + R * 0.035); g.stroke();
+    jogPlatter = pc;
+
+    // riflesso fisso: resta fermo mentre il piatto gira sotto
+    const sc = mk();
+    g = sc.getContext('2d');
+    g.beginPath(); g.arc(c, c, rp, 0, TAU); g.clip();
+    const sg = g.createConicGradient(-Math.PI / 2, c, c);
+    [[0, 0], [0.07, 0.05], [0.15, 0], [0.5, 0], [0.57, 0.035], [0.65, 0], [1, 0]].forEach(([t, a]) => sg.addColorStop(t, 'rgba(255,255,255,' + a + ')'));
+    g.fillStyle = sg; g.fillRect(0, 0, W, W);
+    jogSheen = sc;
+  }
+
+  function drawJog(now) {
+    const W = jc.width, g = jx;
+    if (!jogRing || W !== jogBuiltW) return;
+    const c = W / 2, R = c * 0.985, TAU = Math.PI * 2;
+    g.clearRect(0, 0, W, W);
+    g.drawImage(jogRing, 0, 0);
+    const rev = D.track && D.sr ? D.posF / D.sr / S.secPerRev : 0;
+    g.save(); g.translate(c, c); g.rotate((rev % 1) * TAU); g.drawImage(jogPlatter, -c, -c); g.restore();
+    g.drawImage(jogSheen, 0, 0);
+    // avanzamento del brano lungo la cornice
+    const rr = R * 0.977;
+    g.lineCap = 'butt'; g.lineWidth = Math.max(2, R * 0.02);
+    g.strokeStyle = 'rgba(0,0,0,.55)'; g.beginPath(); g.arc(c, c, rr, 0, TAU); g.stroke();
+    if (D.track && D.len) {
+      const f = clamp(D.posF / D.len, 0, 1), rem = (D.len - D.posF) / D.sr;
+      const warn = S.endWarn && D.playing && rem < S.endWarn;
+      g.strokeStyle = warn && Math.floor(now / 500) % 2 === 0 ? '#ff4d5e' : '#ffb020';
+      if (f > 0.0005) { g.beginPath(); g.arc(c, c, rr, -Math.PI / 2, -Math.PI / 2 + f * TAU); g.stroke(); }
+    }
+    // dito sull'anello o sul piatto
+    if (J.zone === 'ring' || (J.zone === 'top' && !J.top)) {
+      g.strokeStyle = 'rgba(255,176,32,.17)'; g.lineWidth = R * (0.955 - JOG_RING_IN);
+      g.beginPath(); g.arc(c, c, R * (0.955 + JOG_RING_IN) / 2, 0, TAU); g.stroke();
+    }
+    if (J.top) {
+      g.strokeStyle = 'rgba(255,176,32,.2)'; g.lineWidth = R * 0.06;
+      g.beginPath(); g.arc(c, c, R * (JOG_TOP - 0.035), 0, TAU); g.stroke();
+      g.strokeStyle = '#ffb020'; g.lineWidth = Math.max(2, R * 0.012);
+      g.beginPath(); g.arc(c, c, R * JOG_TOP - g.lineWidth / 2, 0, TAU); g.stroke();
+    }
+  }
+
+  function jogPoint(e) {
+    const r = jc.getBoundingClientRect();
+    const dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
+    return { a: Math.atan2(dy, dx), d: Math.hypot(dx, dy) / (r.width / 2 * 0.985) };
+  }
+  jc.addEventListener('pointerdown', (e) => {
+    if (J.id !== null) return;
+    const p = jogPoint(e);
+    if (p.d > 1) return;
+    e.preventDefault();
+    jc.setPointerCapture(e.pointerId);
+    J.id = e.pointerId; J.a = p.a;
+    J.zone = p.d < JOG_RING_IN ? 'top' : 'ring';
+    if (J.zone === 'top' && S.jogMode === 'vinyl' && D.track) { J.top = true; jogTouch(true); }
+  });
+  jc.addEventListener('pointermove', (e) => {
+    if (e.pointerId !== J.id) return;
+    const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
+    let sum = 0;
+    for (const ev of (evs.length ? evs : [e])) {
+      const p = jogPoint(ev);
+      let da = p.a - J.a;
+      if (da > Math.PI) da -= 2 * Math.PI; else if (da < -Math.PI) da += 2 * Math.PI;
+      J.a = p.a;
+      if (p.d > 0.12) sum += da;          // vicino al perno l'angolo non è affidabile
+    }
+    if (sum) jog(sum / (2 * Math.PI));
+  });
+  const jogEnd = (e) => {
+    if (e.pointerId !== J.id) return;
+    if (J.top) jogTouch(false);
+    J.id = null; J.zone = null; J.top = false;
+  };
+  jc.addEventListener('pointerup', jogEnd);
+  jc.addEventListener('pointercancel', jogEnd);
+  jc.addEventListener('contextmenu', (e) => e.preventDefault());
 
   /* --------------------- tocco sulle forme d'onda --------------------- */
   {
@@ -1136,8 +1348,8 @@
       { sec: 'Deck' },
       { k: 'deck', label: 'Numero del lettore', desc: 'Compare in alto: utile per distinguere i due tablet.', type: 'seg', opts: [[1, '1'], [2, '2']] },
       { sec: 'Jog' },
-      { k: 'jogMode', label: 'Modalità jog', desc: 'Vinile: toccando la jog fermi il brano e fai scratch. CDJ: la jog spinge o frena soltanto.', type: 'seg', opts: [['vinyl', 'VINILE'], ['cdj', 'CDJ']] },
-      { k: 'secPerRev', label: 'Scratch: musica per giro di jog', desc: '1,8 s equivale a un vinile a 33 giri.', type: 'range', min: 0.6, max: 3.6, step: 0.1, fmt: (v) => v.toFixed(1).replace('.', ',') + ' s' },
+      { k: 'jogMode', label: 'Modalità jog', desc: 'Vinile: toccando il centro della jog fermi il brano e girando fai scratch; il bordo accelera o frena. Solo spinta: tutta la jog accelera o frena soltanto.', type: 'seg', opts: [['vinyl', 'VINILE'], ['cdj', 'SOLO SPINTA']] },
+      { k: 'secPerRev', label: 'Scratch: musica per giro di jog', desc: '1,8 s equivale a un vinile a 33 giri: la jog a schermo gira proprio così.', type: 'range', min: 0.6, max: 3.6, step: 0.1, fmt: (v) => v.toFixed(1).replace('.', ',') + ' s' },
       { k: 'nudgeGain', label: 'Sensibilità della spinta', desc: 'Quanto accelera o rallenta il brano quando giri il bordo della jog.', type: 'range', min: 0.03, max: 0.35, step: 0.01, fmt: (v) => Math.round(v * 100) },
       { k: 'brakeSec', label: 'Frenata in pausa', desc: '0 = stop immediato. Valori più alti imitano un giradischi che si ferma.', type: 'range', min: 0, max: 2, step: 0.05, fmt: (v) => (v ? v.toFixed(2).replace('.', ',') + ' s' : 'istantanea') },
       { k: 'startSec', label: 'Avvio in play', type: 'range', min: 0, max: 2, step: 0.05, fmt: (v) => (v ? v.toFixed(2).replace('.', ',') + ' s' : 'istantaneo') },
@@ -1153,11 +1365,12 @@
       { k: 'needle', label: 'Ricerca toccando la panoramica', desc: 'Per sicurezza, di default funziona solo in pausa.', type: 'seg', opts: [['paused', 'SOLO IN PAUSA'], ['always', 'SEMPRE']] },
     ],
     Schermo: [
+      { k: 'orient', label: 'Orientamento', desc: 'Resta bloccato, così il tablet non gira da solo durante la serata. In verticale la jog è più grande.', type: 'seg', opts: [['portrait', 'VERTICALE'], ['landscape', 'ORIZZONTALE'], ['auto', 'AUTOMATICO']] },
       { k: 'timeMode', label: 'Tempo in grande', type: 'seg', opts: [['remain', 'RIMANENTE'], ['elapsed', 'TRASCORSO']] },
       { k: 'endWarn', label: 'Avviso di fine brano', type: 'seg', opts: [[0, 'NO'], [30, '30 s'], [60, '60 s']] },
       { k: 'palette', label: 'Colori della forma d’onda', type: 'seg', opts: [['solco', 'SOLCO'], ['ambra', 'AMBRA'], ['mono', 'MONO']] },
       { k: 'zoomSec', label: 'Zoom della forma d’onda', desc: 'Anche con due dita sulla forma d’onda; doppio tocco per tornare al valore iniziale.', type: 'range', min: 1.5, max: 30, step: 0.5, fmt: (v) => String(v).replace('.', ',') + ' s' },
-      { k: 'touchControls', label: 'Comandi a schermo', desc: 'Automatico: visibili finché non colleghi la jog con i comandi fisici.', type: 'seg', opts: [['auto', 'AUTOMATICO'], ['on', 'SEMPRE'], ['off', 'MAI']] },
+      { k: 'touchControls', label: 'Comandi a schermo', desc: 'Automatico: jog e tasti a schermo restano visibili finché non colleghi la jog fisica.', type: 'seg', opts: [['auto', 'AUTOMATICO'], ['on', 'SEMPRE'], ['off', 'MAI']] },
     ],
   };
   const TABS = ['Lettore', 'Schermo', 'Comandi', 'Libreria', 'Info'];
@@ -1272,6 +1485,8 @@
       '<b>Hot cue</b>: tocca una casella vuota per salvarla, tocca una piena per saltarci. Tieni premuto per colore ed eliminazione.<br>' +
       '<b>Loop</b>: IN e OUT, oppure AUTO per un loop della lunghezza scelta. ½ e ×2 lo accorciano o allungano. RELOOP lo riattiva.<br>' +
       '<b>Slip</b>: durante scratch, reverse e loop il brano continua ad andare avanti “sotto”; quando smetti riparte da lì.<br>' +
+      '<b>Jog a schermo</b>: il bordo accelera o frena il brano in onda (in pausa sposta il punto). In modo VINILE, toccando il centro fermi il brano e girando fai scratch. I tasti ◀ ▶ accanto alla jog spingono a velocità costante.<br>' +
+      '<b>Fader tempo</b>: si muove solo trascinandolo (− in alto, + in basso). TEMPO 0 va tenuto premuto. Cambiando il range il tempo resta lo stesso.<br>' +
       '<b>Forma d’onda</b>: in pausa trascinala con il dito per cercare il punto, con due dita cambi lo zoom.<br><br>' +
       'Tastiera (se colleghi una tastiera): Spazio play, C cue, 1–8 hot cue, I/O loop, L reloop, A auto loop, frecce spinta, [ ] beat jump, K key lock, B brani.<br><br>' +
       'Carattere Inter (licenza SIL OFL).</div>';
@@ -1283,7 +1498,7 @@
   /* ------------------------------ varie ------------------------------ */
   $('#btnFull').addEventListener('click', async () => {
     try {
-      if (!document.fullscreenElement) { await document.documentElement.requestFullscreen({ navigationUI: 'hide' }); try { await screen.orientation.lock('landscape'); } catch (e) { /* niente */ } }
+      if (!document.fullscreenElement) { await document.documentElement.requestFullscreen({ navigationUI: 'hide' }); if (S.orient !== 'auto') { try { await screen.orientation.lock(S.orient); } catch (e) { /* niente */ } } }
       else await document.exitFullscreen();
     } catch (e) { toast('Schermo intero non disponibile qui'); }
   });
@@ -1335,6 +1550,7 @@
     if (D.track) D.posF = engine.estimate();
     drawZoom();
     drawOver();
+    if (jogVisible) drawJog(now);
     if (now - lastUi > 45) { lastUi = now; updateNumbers(D.posF); }
     const dt = lastT ? (now - lastT) / 1000 : 0;
     lastT = now;
@@ -1358,10 +1574,13 @@
       toast('Archivio non disponibile: la libreria non verrà salvata', 4000);
     }
     midi.ticksPerRev = S.ticksPerRev;
+    if (isAndroidApp) document.documentElement.classList.add('android');
+    applyOrientation();
     $('#deckName').textContent = 'DECK ' + S.deck;
     $('#brSort').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x.dataset.s === S.sort));
     renderHotcues(); updateChips(); updateTempoUI(); updateTransport(); tickClock(); updateTouchVisibility();
     resize();
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => buildJog());
     requestAnimationFrame(frame);
     setBusy(analysisBusyText());
     if (isAndroidApp) { startAudio().catch(() => {}); }

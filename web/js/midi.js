@@ -16,7 +16,7 @@
     ['autoLoop', 'Auto loop', 'btn'], ['loopHalve', 'Loop ½', 'btn'], ['loopDouble', 'Loop ×2', 'btn'],
     ['jumpBack', 'Beat jump ◀', 'btn'], ['jumpFwd', 'Beat jump ▶', 'btn'],
     ['memStore', 'Memorizza cue', 'btn'], ['memPrev', 'Cue memoria ◀', 'btn'], ['memNext', 'Cue memoria ▶', 'btn'],
-    ['reverse', 'Reverse', 'btn'], ['slip', 'Slip', 'btn'], ['quantize', 'Quantize', 'btn'], ['jogmode', 'Vinile / CDJ', 'btn'],
+    ['reverse', 'Reverse', 'btn'], ['slip', 'Slip', 'btn'], ['quantize', 'Quantize', 'btn'], ['jogmode', 'Modo vinile', 'btn'],
     ['browse', 'Sfoglia (manopola)', 'rel'], ['load', 'Carica / Conferma', 'btn'], ['back', 'Indietro', 'btn'],
     ['trackPrev', 'Brano precedente', 'btn'], ['trackNext', 'Brano successivo', 'btn'], ['shift', 'Shift', 'btn'],
   ];
