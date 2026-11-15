@@ -33,6 +33,7 @@
   let S = Object.assign({}, DEFAULTS);
 
   const isAndroidApp = !!window.SolcoAndroid;
+  const isDesktopApp = !!window.SolcoDesktop;      // versione Windows (Galaxy Book)
   const singleFile = !!document.getElementById('src-worklet');
   function srcUrl(id, file) {
     const el = document.getElementById(id);
@@ -1384,7 +1385,8 @@
     tabs.innerHTML = TABS.map((t) => '<button data-t="' + t + '" class="' + (t === curTab ? 'on' : '') + '">' + t.toUpperCase() + '</button>').join('');
     const body = $('#setBody');
     body.innerHTML = '';
-    if (SPEC[curTab]) SPEC[curTab].forEach((it) => body.appendChild(settingRow(it)));
+    // l'orientamento si blocca solo nell'app Android
+    if (SPEC[curTab]) SPEC[curTab].filter((it) => it.k !== 'orient' || isAndroidApp).forEach((it) => body.appendChild(settingRow(it)));
     else if (curTab === 'Comandi') renderMidiTab(body);
     else if (curTab === 'Libreria') renderLibTab(body);
     else renderInfoTab(body);
@@ -1497,6 +1499,7 @@
 
   /* ------------------------------ varie ------------------------------ */
   $('#btnFull').addEventListener('click', async () => {
+    if (isDesktopApp) { window.SolcoDesktop.toggleFullscreen(); return; }   // su Windows: schermo intero della finestra (anche F11)
     try {
       if (!document.fullscreenElement) { await document.documentElement.requestFullscreen({ navigationUI: 'hide' }); if (S.orient !== 'auto') { try { await screen.orientation.lock(S.orient); } catch (e) { /* niente */ } } }
       else await document.exitFullscreen();
@@ -1583,7 +1586,7 @@
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => buildJog());
     requestAnimationFrame(frame);
     setBusy(analysisBusyText());
-    if (isAndroidApp) { startAudio().catch(() => {}); }
+    if (isAndroidApp || isDesktopApp) { startAudio().catch(() => {}); }
     runAnalysisQueue();
     if ('serviceWorker' in navigator && location.protocol === 'https:' && !singleFile && !isAndroidApp) {
       navigator.serviceWorker.register('sw.js').catch(() => {});

@@ -1,4 +1,4 @@
-name: APK
+name: APK e Windows
 
 on:
   push:
@@ -65,12 +65,65 @@ jobs:
           name: solco-apk
           path: solco.apk
 
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Prepara l'app per Windows
+        shell: bash
+        run: |
+          rm -rf desktop/web
+          cp -r web desktop/web
+          rm -f desktop/web/sw.js
+          cd desktop
+          npm version --no-git-tag-version --allow-same-version 1.0.${{ github.run_number }}
+          npm install --no-audit --no-fund
+
+      - name: Compila l'installer
+        working-directory: desktop
+        shell: bash
+        run: npx electron-builder --win nsis --x64 --publish never
+
+      - name: Prova automatica su Windows
+        shell: pwsh
+        run: |
+          $exe = Join-Path $PWD 'desktop/dist/win-unpacked/SOLCO.exe'
+          $out = Join-Path $env:RUNNER_TEMP 'prova.json'
+          $p = Start-Process -FilePath $exe -ArgumentList "--smoke=$out" -Wait -PassThru
+          if (Test-Path $out) { Get-Content $out } else { Write-Host 'nessun esito scritto' }
+          if ($p.ExitCode -ne 0) { throw "prova fallita (codice $($p.ExitCode))" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: solco-exe
+          path: desktop/dist/SOLCO-Setup.exe
+
+  release:
+    needs: [build, windows]
+    if: always() && needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: art
+          merge-multiple: true
+
       - name: Pubblica la versione
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
           name: SOLCO 1.0.${{ github.run_number }}
           body: |
-            Scarica **solco.apk** dal tablet e aprilo per installarlo (la prima volta Android chiede di permettere l'installazione da questa fonte).
-          files: solco.apk
+            **Tablet Android**: scarica **solco.apk** dal tablet e aprilo per installarlo (la prima volta Android chiede di permettere l'installazione da questa fonte).
+
+            **Windows (Galaxy Book)**: scarica **SOLCO-Setup.exe** e aprilo. Se compare «Windows ha protetto il PC», tocca «Ulteriori informazioni» e poi «Esegui comunque».
+          files: |
+            art/solco.apk
+            art/SOLCO-Setup.exe
+          fail_on_unmatched_files: false
           make_latest: true

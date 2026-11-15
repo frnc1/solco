@@ -18,6 +18,15 @@ Senza la jog fisica collegata l'app mostra tutti i comandi sullo schermo. In **v
 - **Fader del tempo**: si sposta solo trascinandolo, mai di colpo nel punto toccato (− in alto, + in basso). **TEMPO 0** va tenuto premuto. Cambiando il range (±6…50%) il tempo resta lo stesso.
 - **Orientamento**: bloccato, così il tablet non gira da solo durante la serata. Si cambia da *Impostazioni → Schermo → Orientamento* (verticale, orizzontale o automatico).
 
+## Versione per Windows (Galaxy Book e altri PC touch)
+
+La stessa app gira anche su Windows, in una finestra a schermo intero: comoda su un portatile touch come il Galaxy Book 360, meglio se piegato a tablet e appoggiato sul tavolo.
+
+- **Installazione**: dalla pagina *Releases* scarica **SOLCO-Setup.exe** e aprilo. Se compare «Windows ha protetto il PC», tocca «Ulteriori informazioni» e poi «Esegui comunque». Si crea l'icona SOLCO sul desktop.
+- **Schermo intero**: parte già a schermo intero; F11 o il tasto ⛶ in alto lo attivano e disattivano.
+- **Audio**: esce dall'uscita predefinita di Windows (jack delle cuffie o scheda audio USB).
+- **Brani e jog fisica**: si importano come sul tablet; la jog SOLCO via USB viene riconosciuta da sola.
+
 ## Collegamenti
 
 - **Solo comandi a schermo**: basta un cavo **USB-C → RCA con DAC integrato** (i tablet Samsung recenti non hanno il jack e con un cavo senza DAC non esce suono). Il cavo occupa l'unica presa del tablet, quindi durante il set non si ricarica.

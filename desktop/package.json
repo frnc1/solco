@@ -1,0 +1,35 @@
+{
+  "name": "solco",
+  "productName": "SOLCO",
+  "version": "1.0.0",
+  "description": "SOLCO, lettore per DJ con jog sullo schermo",
+  "author": "SOLCO",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis --x64 --publish never"
+  },
+  "devDependencies": {
+    "electron": "^37.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "it.solco.player",
+    "productName": "SOLCO",
+    "artifactName": "SOLCO-Setup.${ext}",
+    "directories": { "output": "dist" },
+    "files": ["main.js", "preload.js", "web/**/*"],
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "web/icons/icon-512.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "SOLCO"
+    }
+  }
+}
