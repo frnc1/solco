@@ -57,6 +57,16 @@ async def main():
         check('TUTTI: di nuovo tutti i brani', rows == 2, rows)
         check('pulsante tornato GENERE', await page.locator('#brGenre').inner_text() == 'GENERE')
         await page.screenshot(path='/tmp/solco_shots/shots/genere.png')
+        # stesso file reimportato da un'altra provenienza (es. Drive): data diversa, stesso nome e dimensione → saltato
+        n = await page.evaluate("""async () => {
+          const mk = (lm) => new File([new Uint8Array(4096)], 'doppio.wav', { type: 'audio/wav', lastModified: lm });
+          await solco.importFiles([mk(1000)]);
+          await solco.importFiles([mk(987654321)]);
+          return solco.tracks().filter((t) => t.fileName === 'doppio.wav').length;
+        }""")
+        check('stesso brano da un\'altra cartella: niente doppione', n == 1, n)
+        t = await page.locator('#toast').inner_text()
+        check('avviso «già presenti»', 'già present' in t, t)
         check('nessun errore nella pagina', not errs, errs)
         await b.close()
     print('FALLITI:', fails)

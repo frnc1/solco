@@ -11,7 +11,7 @@
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const normTxt = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
-  const VERSION = '1.3.0';
+  const VERSION = '1.3.1';
   const LETTERS = 'ABCDEFGH';
   const HOT_COLORS = ['#ff4d5e', '#ff9f1c', '#ffd23f', '#34d77b', '#2fd0c2', '#4c8dff', '#8b6bff', '#ff5fb4'];
   const RANGES = [6, 8, 10, 16, 50];
@@ -1161,7 +1161,8 @@
     for (let k = 0; k < list.length; k++) {
       const f = list[k];
       const id = 't' + hashStr(f.name + '|' + f.size + '|' + f.lastModified);
-      if (tracks.some((t) => t.id === id)) { skipped++; continue; }
+      // già in libreria: stesso id, oppure stesso nome e dimensione (lo stesso file preso da Drive o da un'altra cartella)
+      if (tracks.some((t) => t.id === id || (t.fileName === f.name && t.size === f.size))) { skipped++; continue; }
       setBusy('Importo ' + (k + 1) + '/' + list.length + '…');
       let tags = {};
       try { tags = SolcoMedia.readTags(await f.arrayBuffer(), f.name); } catch (e) { tags = SolcoMedia.readTags(new ArrayBuffer(0), f.name); }

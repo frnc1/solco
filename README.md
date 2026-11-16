@@ -10,6 +10,8 @@ Un tablet Android diventa un lettore da collegare al mixer: forma d'onda, BPM e 
 
 Per aggiornare basta installare il nuovo `solco.apk` sopra quello vecchio: libreria, cue e impostazioni restano.
 
+**Musica su Google Drive**: in + IMPORTA il selettore di Android mostra anche Drive. Tieni premuto un brano per selezionarne più di uno (nel menu del selettore di solito c'è anche «Seleziona tutto»): SOLCO li scarica e ne tiene una copia sua, così durante il set non serve internet. Reimportando la stessa cartella, i brani già presenti vengono saltati. Su Windows, con l'app Google Drive per desktop, Drive compare come un disco in Esplora file.
+
 ## Lista dei brani
 
 - **Ordine**: RECENTI, TITOLO, ARTISTA, BPM oppure **CAMELOT** (1A, 1B, 2A… e, a pari chiave, per BPM).
