@@ -165,6 +165,47 @@ for (const tv of [0.94, 1.16]) {
   const ph2 = ((d.pos - SR * 0.1) % bl + bl) % bl;
   check('hot cue quantizzata: mantiene la fase', Math.abs(ph - ph2) < 2, ph.toFixed(0) + ' / ' + ph2.toFixed(0));
 }
+// 8b) giradischi (puck): la velocità arriva dal disco
+{
+  const t = makeSine(20, 440);
+  const { d } = newDeck(t);
+  d.onMessage({ t: 'vc', on: true });
+  d.onMessage({ t: 'vcRate', r: 1 });
+  run(d, 2);
+  check('giradischi: disco a 33 giri → il brano va a velocità normale', Math.abs(d.pos / SR - 2) < 0.03, (d.pos / SR).toFixed(3) + ' s');
+  check('giradischi: il brano risulta in riproduzione', d.playing === true);
+  let p0 = d.pos;
+  d.onMessage({ t: 'vcRate', r: 1.08 });
+  run(d, 2);
+  check('giradischi: pitch +8% → +8%', Math.abs((d.pos - p0) / SR - 2.16) < 0.03, ((d.pos - p0) / SR).toFixed(3) + ' s');
+  d.onMessage({ t: 'play' }); d.onMessage({ t: 'pause' }); d.onMessage({ t: 'tempo', v: 0.5 });
+  p0 = d.pos;
+  run(d, 1);
+  check('giradischi: play/pausa/fader del tempo non contano', Math.abs((d.pos - p0) / SR - 1.08) < 0.03, ((d.pos - p0) / SR).toFixed(3) + ' s');
+  d.onMessage({ t: 'vcRate', r: 0 });
+  run(d, 0.2);
+  p0 = d.pos;
+  run(d, 1);
+  check('giradischi: disco fermo → brano fermo', Math.abs(d.pos - p0) < 5 && d.playing === false, (d.pos - p0).toFixed(1) + ' campioni');
+  d.onMessage({ t: 'vcRate', r: -2 });
+  run(d, 0.5);
+  check('giradischi: disco all’indietro → il brano torna indietro', d.pos < p0 - SR * 0.9, ((d.pos - p0) / SR).toFixed(3) + ' s');
+  d.onMessage({ t: 'touch', on: true });
+  check('giradischi: il tocco sulla jog a schermo è ignorato', d.touch === false);
+  d.onMessage({ t: 'keyLock', on: true });
+  d.onMessage({ t: 'vcRate', r: 1.05 });
+  run(d, 0.5);
+  check('giradischi: key lock attivo vicino alla velocità normale', d.st.active === true);
+  d.onMessage({ t: 'vcRate', r: 2.5 });
+  run(d, 0.3);
+  check('giradischi: key lock spento durante lo scratch', d.st.active === false);
+  d.onMessage({ t: 'vc', on: false });
+  run(d, 0.1);
+  p0 = d.pos;
+  run(d, 0.5);
+  check('giradischi spento: il deck torna fermo e ai comandi normali', d.pos === p0 && d.playing === false);
+}
+
 // 9) prestazioni: 60 s con blocco tonalità
 {
   const t = makeSine(90, 440);

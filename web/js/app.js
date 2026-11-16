@@ -11,7 +11,7 @@
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const normTxt = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
-  const VERSION = '1.3.1';
+  const VERSION = '1.4.0';
   const LETTERS = 'ABCDEFGH';
   const HOT_COLORS = ['#ff4d5e', '#ff9f1c', '#ffd23f', '#34d77b', '#2fd0c2', '#4c8dff', '#8b6bff', '#ff5fb4'];
   const RANGES = [6, 8, 10, 16, 50];
@@ -29,6 +29,7 @@
     rangeIdx: 2, keyLock: false, quantize: true, jumpBeats: 16, loopBeats: 4, autoCue: true,
     invertFader: false, needle: 'paused', timeMode: 'remain', palette: 'solco', endWarn: 30,
     touchControls: 'auto', zoomSec: 6, ticksPerRev: 2048, sort: 'added', orient: 'portrait',
+    turntable: 'auto', ttBase: 33,
   };
   let S = Object.assign({}, DEFAULTS);
 
@@ -57,6 +58,8 @@
     loading: false, shift: false, softTakeover: false,
     playSec: 0, countedPlay: false, cmdT: 0,
   };
+  // giradischi con puck (firmware in /firmware/puck): il disco comanda il brano
+  const TT = { on: false, rpm: 0, rate: 0, disp: 1, bat: -1, flags: -1, last: 0, lost: false, uiT: 0, warnCal: false, warnBat: false };
   let tracks = [];
   const artUrls = new Map();
 
@@ -127,7 +130,7 @@
     if (!u) { u = URL.createObjectURL(t.art); artUrls.set(t.id, u); }
     return u;
   }
-  const tempoFactor = () => 1 + D.pitch * RANGES[S.rangeIdx] / 100;
+  const tempoFactor = () => (TT.on ? TT.disp : 1 + D.pitch * RANGES[S.rangeIdx] / 100);
   const beatLen = () => (D.bpm > 0 ? 60 / D.bpm * D.sr : 0);
   function nearestBeat(p) {
     const bl = beatLen();
@@ -152,6 +155,7 @@
     if (k === 'quantize' || k === 'jogMode') updateChips();
     if (k === 'jumpBeats' || k === 'loopBeats') updateChips();
     if (k === 'orient') applyOrientation();
+    if (k === 'turntable' && S.turntable === 'off') ttStop('Giradischi spento: tornano i comandi normali');
   }
   function setS(k, v) {
     // cambiando il range del fader il tempo resta quello di prima (il fader si sposta)
@@ -167,6 +171,96 @@
   }
   function sendParams() { engine.send({ t: 'params', secPerRev: S.secPerRev, nudgeGain: S.nudgeGain, brakeSec: S.brakeSec, startSec: S.startSec }); }
   function sendTempo() { engine.send({ t: 'tempo', v: tempoFactor() }); }
+
+  /* --------------- giradischi: puck sopra il disco, Bluetooth MIDI --------------- */
+  // Il puck misura i giri del disco: la velocità del disco diventa la velocità del brano
+  // (come un DVS in modo relativo). Pitch del giradischi = tempo, disco fermo = brano fermo.
+  const ttBase = () => (S.ttBase === 45 ? 45 : 100 / 3);
+  midi.onPuck = (m) => {
+    if (S.turntable === 'off') return;
+    const now = performance.now();
+    if (m.rpm !== undefined) {
+      TT.rpm = m.rpm; TT.last = now;
+      TT.rate = m.rpm / ttBase();
+      if (!TT.on) ttStart();
+      if (TT.lost) { TT.lost = false; toast('Puck di nuovo collegato'); }
+      engine.send({ t: 'vcRate', r: TT.rate });
+      TT.disp += (Math.abs(TT.rate) - TT.disp) * 0.08;
+      if (now - TT.uiT > 120) { TT.uiT = now; updateTempoUI(); const st = $('#ttStat'); if (st) st.textContent = ttStatus(); }
+    }
+    if (m.bat !== undefined) {
+      TT.bat = m.bat;
+      if (m.bat <= 15 && !TT.warnBat) { TT.warnBat = true; toast('Batteria del puck al ' + m.bat + '%: ricaricalo', 4000); }
+      if (m.bat > 25) TT.warnBat = false;
+    }
+    if (m.flags !== undefined) {
+      TT.flags = m.flags;
+      if (!(m.flags & 1) && !TT.warnCal) { TT.warnCal = true; toast('Puck da calibrare: 33 giri, pitch a 0, poi tieni premuto il tasto A del puck', 5000); }
+    }
+  };
+  function ttStart() {
+    TT.on = true; TT.lost = false; TT.disp = Math.abs(TT.rate) || 1;
+    engine.send({ t: 'vc', on: true });
+    engine.send({ t: 'vcRate', r: TT.rate });
+    toast('Giradischi collegato: ora il brano segue il disco', 3000);
+    updateTempoUI(); updateChips();
+  }
+  function ttStop(msg) {
+    if (!TT.on) return;
+    TT.on = false; TT.lost = false;
+    engine.send({ t: 'vc', on: false });
+    D.playing = false; D.cmdT = performance.now();
+    sendTempo(); updateTransport(); updateTempoUI(); updateChips();
+    if (msg) toast(msg);
+  }
+  function ttStatus() {
+    if (!TT.on) return 'Nessun puck collegato';
+    return 'Puck collegato · ' + Math.abs(TT.rpm).toFixed(2) + ' giri' + (TT.bat >= 0 ? ' · batteria ' + TT.bat + '%' : '') +
+      (TT.flags >= 0 && !(TT.flags & 1) ? ' · da calibrare' : '') + (TT.lost ? ' · non risponde' : '');
+  }
+  // se il puck tace (spento, fuori portata) si tiene l'ultima velocità: il brano non si ferma a metà mix
+  setInterval(() => {
+    if (TT.on && !TT.lost && performance.now() - TT.last > 1500) {
+      TT.lost = true;
+      toast('Il puck non risponde: tengo l’ultima velocità del disco', 4000);
+    }
+  }, 500);
+
+  // ricerca del puck (app Android)
+  let bleList = [], bleOpen = false, bleTok = 0;
+  window.solcoBleFound = (list) => { bleList = Array.isArray(list) ? list : []; if (bleOpen) showBle(); };
+  window.solcoBleState = (st, name) => {
+    const n = name || 'il puck';
+    if (st === 'connecting') toast('Collego ' + n + '…');
+    else if (st === 'connected') toast(n + ' collegato');
+    else if (st === 'fail') toast('Collegamento con ' + n + ' non riuscito: riprova', 3000);
+    else if (st === 'noperm') toast('Serve il permesso Bluetooth per trovare il puck', 3500);
+    else if (st === 'btoff') toast('Accendi il Bluetooth del tablet', 3500);
+    else if (st === 'nobt' || st === 'nomidi') toast('Questo dispositivo non supporta il Bluetooth MIDI', 3500);
+    if (st !== 'connecting' && st !== 'connected' && bleOpen && !bleList.length) { bleOpen = false; bleTok++; if (modalDone) modalDone(null); }
+  };
+  function ttScan() {
+    const A = window.SolcoAndroid;
+    if (!A || !A.bleScan) { toast('La ricerca del puck Bluetooth c’è nell’app Android', 3500); return; }
+    bleList = []; bleOpen = true;
+    try { A.bleScan(); } catch (e) { bleOpen = false; toast('Bluetooth non disponibile'); return; }
+    showBle();
+  }
+  async function showBle() {
+    const my = ++bleTok;
+    const btns = bleList.map((d) => ({ label: esc(d.name || d.addr), value: d.addr, cls: 'pill accent' }));
+    btns.push({ label: 'CHIUDI', value: null });
+    const v = await modal('<h3>Puck Bluetooth</h3>' + (bleList.length
+      ? 'Tocca il puck da usare con questo deck. SOLCO se lo ricorda e lo ricollega da solo.'
+      : 'Cerco… Accendi il puck e tienilo vicino al tablet.'), btns);
+    if (my !== bleTok) return;
+    bleOpen = false;
+    try { window.SolcoAndroid.bleStopScan(); } catch (e) { /* app vecchia */ }
+    if (v) {
+      const d = bleList.find((x) => x.addr === v);
+      try { window.SolcoAndroid.bleConnect(v, d ? d.name : ''); } catch (e) { toast('Collegamento non riuscito'); }
+    }
+  }
 
   /* ------------------------------ audio ------------------------------ */
   async function startAudio() {
@@ -275,6 +369,7 @@
   /* ------------------------------ trasporto ------------------------------ */
   function play() {
     if (!D.track) return;
+    if (TT.on) { toast('Col giradischi il brano parte e si ferma col disco'); return; }
     if (D.cuePreview || D.hotPreview >= 0) { D.playInPreview = true; updateTransport(); return; }
     if (D.playing) { engine.send({ t: 'pause' }); D.playing = false; }
     else { engine.send({ t: 'play' }); D.playing = true; }
@@ -347,6 +442,7 @@
   function tempoReset() { setPitch(0); D.softTakeover = true; toast('Tempo a zero'); }
   // BPM scritto a mano: tempo esatto senza dover centrare il fader
   async function askBpm() {
+    if (TT.on) { toast('Col giradischi il tempo si regola col pitch del giradischi'); return; }
     if (!D.track) { toast('Carica prima un brano'); return; }
     if (!D.bpm) { toast('BPM del brano non ancora rilevato: aspetta la fine dell’analisi'); return; }
     const maxR = RANGES[RANGES.length - 1];
@@ -481,7 +577,9 @@
   }
   midi.onDevices = updateMidiStatus;
   function updateTouchVisibility() {
-    const on = S.touchControls === 'on' || (S.touchControls === 'auto' && midi.devices.length === 0);
+    // il puck del giradischi non ha tasti: i comandi a schermo restano
+    const ctl = midi.devices.filter((n) => !/^SOLCO Puck/i.test(n)).length;
+    const on = S.touchControls === 'on' || (S.touchControls === 'auto' && ctl === 0);
     $('#app').classList.toggle('touch-on', on);
     jogVisible = on;
     requestAnimationFrame(resize);
@@ -774,28 +872,31 @@
     dots.forEach((d, i) => { d.classList.toggle('on', i === k); d.classList.toggle('one', i === 0); });
   }
   function updateTempoUI() {
-    const r = RANGES[S.rangeIdx], pct = D.pitch * r;
+    const r = RANGES[S.rangeIdx];
+    let pct = TT.on ? (TT.disp - 1) * 100 : D.pitch * r;
+    if (TT.on && Math.abs(pct) < 0.005) pct = 0;
+    const pp = TT.on ? clamp(pct / r, -1, 1) : D.pitch;
     setTxt('pitchPct', (pct > 0 ? '+' : pct < 0 ? '−' : '') + Math.abs(pct).toFixed(2) + '%');
     setTxt('rangeChip', '±' + r + '%');
     setTxt('tRange', '±' + r + '%');
     $('#klChip').classList.toggle('on', S.keyLock);
     $('#tKL').classList.toggle('on', S.keyLock);
     // fader a schermo (verticale: − in alto, + in basso)
-    const f = (D.pitch + 1) / 2;
+    const f = (pp + 1) / 2;
     $('#tThumb').style.top = 'calc(var(--u) * 34 + (100% - var(--u) * 68) * ' + f + ')';
     const fill = $('#tFaderFill');
     fill.style.top = Math.min(50, f * 100) + '%';
     fill.style.height = Math.abs(f * 100 - 50) + '%';
     setTxt('tPct', (pct > 0 ? '+' : pct < 0 ? '−' : '') + Math.abs(pct).toFixed(2) + '%');
-    $('#tPct').classList.toggle('zero', D.pitch === 0);
-    $('#tFader').classList.toggle('zero', D.pitch === 0);
+    $('#tPct').classList.toggle('zero', Math.abs(pct) < 0.005);
+    $('#tFader').classList.toggle('zero', Math.abs(pct) < 0.005);
   }
   function updateChips() {
     $('#chQuant').classList.toggle('on', S.quantize);
     $('#chSlip').classList.toggle('on', D.slip);
     $('#chRev').classList.toggle('on', D.reverse);
     const v = $('#chVinyl');
-    v.textContent = S.jogMode === 'vinyl' ? 'VINILE' : 'SPINTA';
+    v.textContent = TT.on ? 'GIRADISCHI' : (S.jogMode === 'vinyl' ? 'VINILE' : 'SPINTA');
     v.classList.toggle('on', true);
     $('#tRev').classList.toggle('on', D.reverse);
     $('#tSlip').classList.toggle('on', D.slip);
@@ -1326,7 +1427,7 @@
   }
   function trackStep(dir) {
     if (!$('#browser').classList.contains('hidden')) { browseMove(dir); return; }
-    if (D.playing) { toast('Metti in pausa per cambiare brano'); return; }
+    if (D.playing) { toast(TT.on ? 'Ferma il disco per cambiare brano' : 'Metti in pausa per cambiare brano'); return; }
     const arr = filtered();
     if (!arr.length) return;
     let i = D.track ? arr.findIndex((t) => t.id === D.track.id) : -1;
@@ -1500,6 +1601,10 @@
   function renderMidiTab(body) {
     const devs = midi.devices;
     body.innerHTML =
+      '<div class="set-sec">GIRADISCHI</div>' +
+      '<div class="set-row"><div><div class="sl" id="ttStat">' + esc(ttStatus()) + '</div><div class="sd">Il puck sopra il disco manda i giri via Bluetooth: il brano segue il disco e il pitch del giradischi regola il tempo.</div></div>' +
+      '<div class="set-ctl"><button class="pill" id="ttScan">CERCA PUCK</button></div></div>' +
+      '<div id="ttRows"></div>' +
       '<div class="set-sec">CONTROLLER</div>' +
       '<div class="set-row"><div><div class="sl">' + (devs.length ? esc(devs.join(', ')) : 'Nessun controller collegato') + '</div>' +
       '<div class="sd">' + (navigator.requestMIDIAccess || isAndroidApp ? 'Collega la jog con il cavo USB: viene riconosciuta da sola.' : 'Questo browser non supporta i controller MIDI: usa Chrome o l’app SOLCO.') + '</div></div>' +
@@ -1508,6 +1613,11 @@
       '<div class="set-sec">ASSEGNA I COMANDI</div><div class="sd" style="margin:6px 0 4px">Tocca ASSEGNA, poi muovi o premi il comando sul controller. Se la jog risponde solo quando la tocchi sopra (o solo sul bordo), assegna anche «Jog (bordo)».</div>' +
       '<div class="map-grid" id="mGrid"></div>' +
       '<div class="set-sec">MONITOR MIDI</div><div class="mon" id="mMon">' + esc(monLines.join('\n') || 'Premi un tasto sul controller per vedere cosa arriva.') + '</div>';
+    const ttRows = body.querySelector('#ttRows');
+    [{ k: 'turntable', label: 'Giradischi', desc: 'AUTO: appena arrivano i dati del puck, il disco comanda il brano. SPENTO: il puck viene ignorato.', type: 'seg', opts: [['auto', 'AUTO'], ['off', 'SPENTO']] },
+      { k: 'ttBase', label: 'Velocità del giradischi', desc: 'La stessa impostata sul giradischi: a pitch 0 il brano va alla sua velocità originale.', type: 'seg', opts: [[33, '33 GIRI'], [45, '45 GIRI']] }]
+      .forEach((it) => ttRows.appendChild(settingRow(it)));
+    body.querySelector('#ttScan').onclick = ttScan;
     const grid = body.querySelector('#mGrid');
     SolcoMidi.FUNCS.forEach(([fn, label]) => {
       const r = document.createElement('div');
@@ -1560,6 +1670,7 @@
       '<b>Loop</b>: IN e OUT, oppure AUTO per un loop della lunghezza scelta. ½ e ×2 lo accorciano o allungano. RELOOP lo riattiva.<br>' +
       '<b>Slip</b>: durante scratch, reverse e loop il brano continua ad andare avanti “sotto”; quando smetti riparte da lì.<br>' +
       '<b>Jog a schermo</b>: il bordo accelera o frena il brano in onda (in pausa sposta il punto). In modo VINILE, toccando il centro fermi il brano e girando fai scratch. I tasti ◀ ▶ accanto alla jog spingono a velocità costante.<br>' +
+      '<b>Giradischi</b>: con il puck sopra il disco (Comandi → GIRADISCHI) il brano segue il disco: il pitch del giradischi regola il tempo, se fermi il disco il brano si ferma, lo scratch è vero scratch. CUE riporta al punto di cue. Il puck si calibra una volta: 33 giri, pitch a 0, tasto A del puck tenuto premuto.<br>' +
       '<b>Fader tempo</b>: si muove solo trascinandolo (− in alto, + in basso). TEMPO 0 va tenuto premuto. Cambiando il range il tempo resta lo stesso.<br>' +
       '<b>Forma d’onda</b>: in pausa trascinala con il dito per cercare il punto, con due dita cambi lo zoom.<br><br>' +
       'Tastiera (se colleghi una tastiera): Spazio play, C cue, 1–8 hot cue, I/O loop, L reloop, A auto loop, frecce spinta, [ ] beat jump, K key lock, B brani.<br><br>' +
@@ -1674,6 +1785,6 @@
     if (!open) toast('Per uscire usa il tasto Home');
     return true;
   };
-  window.solco = { D, S, engine, midi, loadTrack, importFiles, tracks: () => tracks, onControl, setBpm, RANGES };
+  window.solco = { D, S, engine, midi, loadTrack, importFiles, tracks: () => tracks, onControl, setBpm, RANGES, TT };
   init();
 })();

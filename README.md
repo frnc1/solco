@@ -43,6 +43,20 @@ La stessa app gira anche su Windows, in una finestra a schermo intero: comoda su
 - **Audio:** uscita RCA della scheda audio → ingresso CD/LINE di un canale del mixer.
 - **Jog e comandi fisici:** l'app riconosce da sola la jog SOLCO; altri controller MIDI si assegnano da *Impostazioni → Comandi* (ASSEGNA, poi muovi il comando). I fader del tempo a 14 bit su due CC vengono riconosciuti da soli. Se la jog del controller manda il bordo su un CC a parte, assegna anche «Jog (bordo)». Con un controller che ha solo jog e fader, metti *Impostazioni → Schermo → Comandi a schermo* su **SEMPRE** per tenere CUE, PLAY e gli altri tasti sullo schermo.
 
+## Giradischi come controller (puck Bluetooth)
+
+Un **M5StickS3** sopra il disco misura quanto gira il disco e lo manda al tablet via Bluetooth MIDI: il brano segue il disco. Il pitch del giradischi regola il tempo; se fermi il disco il brano si ferma; lo scratch è vero scratch. Niente puntina, niente dischi timecode, nessun cavo verso il tablet. **Non ancora provato con l'hardware vero.**
+
+**Serve, per ogni giradischi:** 1 M5StickS3 (M5Stack K150), il porta-puck stampato (`hardware/stampa/porta_puck.stl`, PLA, senza supporti), biadesivo forte, un disco vecchio qualsiasi (resta sempre quello: è il disco di controllo).
+
+1. **Programma sul puck** (una volta, dal Galaxy Book): scarica `solco-puck.bin` dall'ultima versione su GitHub, apri https://espressif.github.io/esptool-js/ in Chrome o Edge, collega lo stick col cavo USB-C, premi *Connect* e scegli la porta, metti indirizzo `0x0` e il file `solco-puck.bin`, premi *Program*. Al riavvio lo schermo mostra «SOLCO Puck» e quattro cifre.
+2. **Montaggio:** incolla il porta-puck sull'etichetta del disco. Il foro centrale è più largo del perno apposta: il puck deve girare col **disco**, non col piatto, altrimenti non sente il disco tenuto fermo né lo scratch. Infila lo stick, schermo in su; disco sullo slipmat.
+3. **Collegamento:** SOLCO sul tablet → *Impostazioni → Comandi → CERCA PUCK* → tocca il puck. Poi si ricollega da solo.
+4. **Calibrazione** (una volta): giradischi a 33 giri, pitch a 0, piatto in moto; tieni premuto il tasto **A** dello stick per 2 secondi e non toccare niente per circa 8 secondi, finché lo schermo dice «Calibrato a 33 giri» (se non sai qual è il tasto A: è quello che, tenuto premuto, fa comparire «Calibro»). Il tasto **B** azzera il giroscopio a piatto fermo; lo fa anche da solo ogni volta che il piatto è fermo.
+5. **Prova** in quest'ordine: start/stop del giradischi, pitch, spinta sul bordo, disco tenuto fermo e poi rilasciato, scratch.
+
+In SOLCO con il puck collegato: PLAY non serve (comanda il disco), CUE riporta al punto di cue, il BPM sullo schermo segue il pitch del giradischi. Se il puck smette di rispondere, SOLCO tiene l'ultima velocità del disco. *Impostazioni → Comandi → Giradischi: SPENTO* torna ai comandi normali. Programma e protocollo in `firmware/puck/`.
+
 ## Jog, pulsanti e supporto da stampare
 
 Tutto in `hardware/`: lista della spesa senza saldature, piatti `.3mf` pronti per la stampante, montaggio e schema dei collegamenti (`hardware/README.md`). Il programma della scheda è in `firmware/`.
@@ -53,7 +67,7 @@ Tutto in `hardware/`: lista della spesa senza saldature, piatti `.3mf` pronti pe
 |---|---|
 | `web/` | L'app vera e propria (HTML, CSS, JavaScript). Motore audio in AudioWorklet (`js/worklet.js`), analisi dei brani in un Web Worker (`js/analysis.js`). |
 | `android/` | Contenitore Android: WebView a schermo intero, comandi MIDI via USB, selettore dei file. |
-| `tests/` | Test del motore audio e dell'analisi (`node tests/engine.test.js`, `node tests/analysis.test.js`), del firmware (`python3 tests/firmware_test.py`) e dell'interfaccia in Chrome headless: jog a schermo (`python3 tests/ui_jog_test.py`), filtro per genere (`python3 tests/ui_genre_test.py`), assegnazione di controller MIDI qualsiasi (`python3 tests/ui_midi_learn_test.py`), BPM scritto a mano (`python3 tests/ui_bpm_test.py`). |
+| `tests/` | Test del motore audio e dell'analisi (`node tests/engine.test.js`, `node tests/analysis.test.js`), del firmware (`python3 tests/firmware_test.py`) e dell'interfaccia in Chrome headless: jog a schermo (`python3 tests/ui_jog_test.py`), filtro per genere (`python3 tests/ui_genre_test.py`), assegnazione di controller MIDI qualsiasi (`python3 tests/ui_midi_learn_test.py`), BPM scritto a mano (`python3 tests/ui_bpm_test.py`), giradischi con puck (`python3 tests/ui_turntable_test.py`). |
 | `hardware/` | Pezzi da stampare (`stampa/`), anteprime, generatore dei modelli (`cad/`). |
 | `firmware/` | Programma CircuitPython per il Pico H della jog. |
 | `.github/workflows/apk.yml` | Ogni modifica sul ramo `main` compila un nuovo `solco.apk` e lo pubblica tra le Releases. |

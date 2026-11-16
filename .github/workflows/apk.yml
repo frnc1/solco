@@ -103,8 +103,46 @@ jobs:
           name: solco-exe
           path: desktop/dist/SOLCO-Setup.exe
 
+  puck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Strumenti Arduino, core ESP32 e librerie
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR="$HOME/bin" sh
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/bin:$PATH"
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32@3.3.12
+          mkdir -p "$HOME/Arduino/libraries" && cd "$HOME/Arduino/libraries"
+          git clone -q --depth 1 -b 2.5.2 https://github.com/h2zero/NimBLE-Arduino
+          git clone -q --depth 1 -b 0.3.0 https://github.com/m5stack/M5Unified
+          git clone -q --depth 1 -b 0.3.0 https://github.com/m5stack/M5GFX
+          pip install -q esptool
+      - name: Compila il firmware del puck (M5StickS3)
+        run: |
+          arduino-cli compile --warnings default \
+            --fqbn esp32:esp32:esp32s3:CDCOnBoot=cdc,FlashSize=8M,PartitionScheme=default_8MB,PSRAM=disabled \
+            --output-dir build firmware/puck/solco_puck
+          ls -la build
+          if [ ! -f build/solco_puck.ino.merged.bin ]; then
+            B0=$(ls ~/.arduino15/packages/esp32/hardware/esp32/*/tools/partitions/boot_app0.bin | head -1)
+            python3 -m esptool --chip esp32s3 merge_bin -o build/solco_puck.ino.merged.bin \
+              0x0 build/solco_puck.ino.bootloader.bin 0x8000 build/solco_puck.ino.partitions.bin \
+              0xe000 "$B0" 0x10000 build/solco_puck.ino.bin
+          fi
+          cp build/solco_puck.ino.merged.bin solco-puck.bin
+          cp hardware/stampa/porta_puck.stl porta-puck.stl
+      - uses: actions/upload-artifact@v4
+        with:
+          name: solco-puck
+          path: |
+            solco-puck.bin
+            porta-puck.stl
   release:
-    needs: [build, windows]
+    needs: [build, windows, puck]
     if: always() && needs.build.result == 'success'
     runs-on: ubuntu-latest
     steps:
@@ -122,8 +160,11 @@ jobs:
             **Tablet Android**: scarica **solco.apk** dal tablet e aprilo per installarlo (la prima volta Android chiede di permettere l'installazione da questa fonte).
 
             **Windows (Galaxy Book)**: scarica **SOLCO-Setup.exe** e aprilo. Se compare «Windows ha protetto il PC», tocca «Ulteriori informazioni» e poi «Esegui comunque».
+            **Puck del giradischi (M5StickS3)**: **solco-puck.bin** è il programma da caricare sul puck, **porta-puck.stl** il supporto da stampare. Istruzioni nel README, sezione «Giradischi come controller».
           files: |
             art/solco.apk
             art/SOLCO-Setup.exe
+            art/solco-puck.bin
+            art/porta-puck.stl
           fail_on_unmatched_files: false
           make_latest: true

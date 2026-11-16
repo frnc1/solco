@@ -133,3 +133,8 @@ Le scritte piccole **sopra** i tasti sono le funzioni con SHIFT. I led del fader
 | `stampa/` | piatti `.3mf` pronti e pezzi `.stl` |
 | `anteprime/` | immagini dei pezzi, sezioni come le vede lo slicer, schema dei collegamenti |
 | `cad/` | il programma che genera i pezzi (`python3 cad/genera.py`): misure in `cad/parti.py` |
+
+## Porta-puck per il giradischi
+
+`stampa/porta_puck.stl` (sorgente `cad/porta_puck.py`): disco Ø 90 mm da incollare sull'etichetta del disco di controllo, con la sede per un M5StickS3. Foro centrale Ø 9 mm sul perno da 7,24 mm, così gira col disco e non col piatto. Si stampa così com'è, base sul piatto, senza supporti. Se lo stick balla nella sede, un giro di nastro sul fondo.
+

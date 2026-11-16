@@ -5,6 +5,8 @@
 'use strict';
 (function (root) {
 
+  const PUCK_CH = 12, PUCK_ZERO = 1 << 20, PUCK_SCALE = 4000;
+
   // funzioni assegnabili: id, etichetta, tipo
   const FUNCS = [
     ['play', 'Play / Pausa', 'btn'], ['cue', 'Cue', 'btn'],
@@ -53,6 +55,8 @@
       this.hi = new Map();                             // fader a 14 bit su CC: ultimo byte alto e basso
       this.ticksPerRev = 2048;
       this.onDevices = null;
+      this.onPuck = null;                // puck del giradischi (firmware in /firmware/puck)
+      this.puck = { hi: -1, mid: -1 };
       // ponte per l'app Android: il codice nativo chiama queste funzioni
       root.solcoMidiIn = (bytes, ts) => this.handle(bytes, ts || performance.now());
       root.solcoMidiBatch = (list) => { const now = performance.now(); for (let i = 0; i < list.length; i++) this.handle(list[i], now); };
@@ -98,6 +102,8 @@
     handle(data, ts) {
       if (!data || data.length < 2) return;
       const s = data[0], type = s & 0xf0, ch = s & 0x0f;
+      // puck del giradischi: canale 13, CC 102-106 (non passano dal monitor né dalla mappatura)
+      if (type === 0xB0 && ch === PUCK_CH && data[1] >= 102 && data[1] <= 106) { this.puckIn(data[1], data[2] | 0, ts); return; }
       let ev = null;
       if (type === 0x90 || type === 0x80) ev = { type: 'note', ch, num: data[1], val: (type === 0x90 && data[2] > 0) ? 1 : 0, raw: data[2] || 0 };
       else if (type === 0xB0) ev = { type: 'cc', ch, num: data[1], val: data[2] };
@@ -109,6 +115,20 @@
       const e = this.index.get(ev.type + ':' + ev.ch + ':' + ev.num);
       if (!e) return;
       this.dispatch(e, ev);
+    }
+
+    /* velocità del disco in 21 bit (CC 102 alto, 103 medio, 104 basso: si applica sul basso),
+       giri al minuto × 4000 con segno; CC 105 batteria in %, CC 106 stato */
+    puckIn(num, v, ts) {
+      const p = this.puck;
+      if (num === 102) p.hi = v;
+      else if (num === 103) p.mid = v;
+      else if (num === 104) {
+        if (p.hi < 0 || p.mid < 0) return;
+        const u = (p.hi << 14) | (p.mid << 7) | v;
+        if (this.onPuck) this.onPuck({ rpm: (u - PUCK_ZERO) / PUCK_SCALE, ts });
+      } else if (num === 105) { if (this.onPuck) this.onPuck({ bat: v, ts }); }
+      else if (num === 106) { if (this.onPuck) this.onPuck({ flags: v, ts }); }
     }
 
     doLearn(ev) {
@@ -202,5 +222,13 @@
     }
   }
 
-  root.SolcoMidi = { Midi, FUNCS, defaultMap };
+  // codifica usata dal puck (serve anche ai test)
+  function puckBytes(rpm) {
+    let v = Math.round(rpm * PUCK_SCALE);
+    v = Math.max(-(PUCK_ZERO - 1), Math.min(PUCK_ZERO - 1, v));
+    const u = v + PUCK_ZERO, st = 0xB0 | PUCK_CH;
+    return [[st, 102, (u >> 14) & 0x7f], [st, 103, (u >> 7) & 0x7f], [st, 104, u & 0x7f]];
+  }
+
+  root.SolcoMidi = { Midi, FUNCS, defaultMap, puckBytes };
 })(typeof self !== 'undefined' ? self : this);

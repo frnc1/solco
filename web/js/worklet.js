@@ -139,6 +139,8 @@ class DeckDSP {
     this.scratchTau = 0.008;
     this.relFrom = 0; this.relLeft = 0; this.relTotal = Math.round(sr * 0.06);
     this.curRate = 0;
+    // giradischi (puck): la velocità arriva dal disco, come un DVS in modo relativo
+    this.vc = false; this.vcTarget = 0; this.vcCur = 0;
     // loop
     this.loopIn = -1; this.loopOut = -1; this.loopOn = false;
     // slip
@@ -182,7 +184,14 @@ class DeckDSP {
       case 'reverse': this.reverse = !!m.on; break;
       case 'slip': this.slip = !!m.on; if (!this.slip) this.inExc = false; break;
       case 'grid': this.firstBeat = m.first; this.beatLen = m.len; break;
+      case 'vc':
+        this.vc = !!m.on;
+        if (this.vc) { this.vcCur = this.curRate; this.vcTarget = this.curRate; this.touch = false; this.bend = 0; this.nudgeAcc = 0; }
+        else { this.playing = false; }
+        break;
+      case 'vcRate': this.vcTarget = +m.r || 0; break;
       case 'touch':
+        if (this.vc) break;               // col giradischi comanda il disco, non la jog a schermo
         if (m.on && !this.touch) { this.touch = true; this.scratchTarget = this.pos; }
         else if (!m.on && this.touch) {
           this.touch = false;
@@ -362,6 +371,12 @@ class DeckDSP {
       if (target === 0 && Math.abs(this.bend) < 1e-4) this.bend = 0;
     }
 
+    if (this.vc) {
+      // velocità del disco, ammorbidita appena (i dati arrivano a pacchetti dal Bluetooth)
+      this.vcCur += (this.vcTarget - this.vcCur) * (1 - Math.exp(-blockSec / 0.01));
+      this.playing = Math.abs(this.vcCur) > 0.02;
+      this.bend = 0; this.relLeft = 0; this.motor = 1;
+    }
     const scratching = this.touch || this.scrubLeft > 0;
     if (this.scrubLeft > 0) this.scrubLeft -= n;
 
@@ -379,12 +394,14 @@ class DeckDSP {
       }
     }
 
-    const base = this.tempo * (1 + this.bend) * (this.reverse ? -1 : 1);
+    const base = (this.vc ? this.vcCur : this.tempo * (1 + this.bend)) * (this.reverse ? -1 : 1);
     let r0 = this.curRate, r1;
     if (scratching) {
       const err = this.scratchTarget - this.pos;
       r1 = clamp(err / Math.max(n, this.scratchTau * sr), -14, 14);
       this.motor = this.playing ? 1 : 0;
+    } else if (this.vc) {
+      r1 = base;
     } else {
       // rampa del motore (avvio / frenata)
       const want = this.playing ? 1 : 0;
@@ -402,7 +419,7 @@ class DeckDSP {
     }
 
     const useStretch = this.keyLock && !scratching && this.relLeft === 0 && this.motor >= 1 &&
-      !this.reverse && this.playing && Math.abs(base - 1) > 2e-4;
+      !this.reverse && this.playing && Math.abs(base - 1) > 2e-4 && (!this.vc || Math.abs(base - 1) < 0.2);
 
     if (useStretch && !st.active) st.reset(this.pos);
     else if (!useStretch && st.active) { this.startXfade(st.srcPos(), 1); st.active = false; }
@@ -450,7 +467,7 @@ class DeckDSP {
       t: 'pos', p: this.pos, r: this.curRate, pl: this.playing, ct: this.ct,
       lo: this.loopOn, li: this.loopIn, lt: this.loopOut,
       sl: this.inExc, sp: this.slipPos, sc: this.touch || this.scrubLeft > 0,
-      kl: this.st.active, b: this.bend
+      kl: this.st.active, b: this.bend, vc: this.vc ? this.vcCur : null
     });
   }
 }
