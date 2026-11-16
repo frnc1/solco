@@ -11,7 +11,7 @@
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const normTxt = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
-  const VERSION = '1.2.1';
+  const VERSION = '1.3.0';
   const LETTERS = 'ABCDEFGH';
   const HOT_COLORS = ['#ff4d5e', '#ff9f1c', '#ffd23f', '#34d77b', '#2fd0c2', '#4c8dff', '#8b6bff', '#ff5fb4'];
   const RANGES = [6, 8, 10, 16, 50];
@@ -345,6 +345,46 @@
     D.pitch = n; sendTempo(); updateTempoUI();
   }
   function tempoReset() { setPitch(0); D.softTakeover = true; toast('Tempo a zero'); }
+  // BPM scritto a mano: tempo esatto senza dover centrare il fader
+  async function askBpm() {
+    if (!D.track) { toast('Carica prima un brano'); return; }
+    if (!D.bpm) { toast('BPM del brano non ancora rilevato: aspetta la fine dell’analisi'); return; }
+    const maxR = RANGES[RANGES.length - 1];
+    const lo = D.bpm * (1 - maxR / 100), hi = D.bpm * (1 + maxR / 100);
+    const p = modal('<h3>BPM</h3>Scrivi il BPM che vuoi: il tempo si imposta esatto.<br>Brano originale: <b>' + D.bpm.toFixed(2) +
+      '</b> BPM (puoi andare da ' + lo.toFixed(1) + ' a ' + hi.toFixed(1) + ').' +
+      '<input id="bpmIn" class="bpm-in" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" value="' + (D.bpm * tempoFactor()).toFixed(2) + '">',
+      [{ label: 'ANNULLA', value: null }, { label: 'IMPOSTA', value: 'ok', cls: 'pill accent' }]);
+    // finestra in alto: la tastiera del tablet (che non ridimensiona l'app) non la copre, nemmeno in orizzontale
+    $('#modal').classList.add('top');
+    const inp = $('#bpmIn');
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); const b = $('#mBtns .accent'); if (b) b.click(); }
+      else if (e.key === 'Escape') { e.preventDefault(); const b = $('#mBtns button'); if (b) b.click(); }
+    });
+    inp.focus(); inp.select();
+    const res = await p;
+    $('#modal').classList.remove('top');
+    if (res !== 'ok') return;
+    const v = parseFloat(String(inp.value).replace(',', '.').trim());
+    if (!isFinite(v) || v <= 0) { toast('BPM non valido'); return; }
+    setBpm(v);
+  }
+  function setBpm(v) {
+    if (!D.bpm) return false;
+    const pct = (v / D.bpm - 1) * 100, maxR = RANGES[RANGES.length - 1];
+    if (Math.abs(pct) > maxR + 1e-9) { toast('Troppo lontano dal BPM del brano: al massimo ±' + maxR + '%'); return false; }
+    let widened = false;
+    if (Math.abs(pct) > RANGES[S.rangeIdx] + 1e-9) {      // serve un range più ampio: il più stretto che basta
+      setS('rangeIdx', RANGES.findIndex((r) => r + 1e-9 >= Math.abs(pct)));
+      widened = true;
+    }
+    D.pitch = clamp(pct / RANGES[S.rangeIdx], -1, 1);      // senza la zona morta del fader: valore esatto
+    D.softTakeover = true;                                  // il fader fisico riprende il comando quando lo raggiunge
+    sendTempo(); updateTempoUI();
+    toast('BPM ' + v.toFixed(2) + (widened ? ' · range tempo portato a ±' + RANGES[S.rangeIdx] + '%' : ''));
+    return true;
+  }
   function cycleRange() { setS('rangeIdx', (S.rangeIdx + 1) % RANGES.length); toast('Range tempo ±' + RANGES[S.rangeIdx] + '%: il tempo non cambia'); }
   function toggleKeyLock() { setS('keyLock', !S.keyLock); }
   function toggleReverse() { D.reverse = !D.reverse; engine.send({ t: 'reverse', on: D.reverse }); updateChips(); }
@@ -852,6 +892,9 @@
   tap('#tHalf', () => loopScale(0.5)); tap('#tDouble', () => loopScale(2));
   tap('#tJumpB', () => beatJump(-1)); tap('#tJumpF', () => beatJump(1));
   tap('#tRange', cycleRange); tap('#tKL', toggleKeyLock);
+  // tocco sul BPM (in alto) o sulla percentuale sotto il fader: BPM scritto a mano
+  $('#info .c-tempo').addEventListener('click', askBpm);
+  $('#tPct').addEventListener('click', askBpm);
   // TEMPO 0 solo tenendo premuto: un tocco per sbaglio non cambia il tempo del brano in onda
   {
     const b = $('#tReset');
@@ -1630,6 +1673,6 @@
     if (!open) toast('Per uscire usa il tasto Home');
     return true;
   };
-  window.solco = { D, S, engine, midi, loadTrack, importFiles, tracks: () => tracks, onControl };
+  window.solco = { D, S, engine, midi, loadTrack, importFiles, tracks: () => tracks, onControl, setBpm, RANGES };
   init();
 })();

@@ -516,3 +516,15 @@ svg { display: block; }
 .vf-t, .vf-b { color: #f2f5fa; }
 .tpct { color: var(--amber2); }
 .tpct.zero { color: var(--green); }
+
+/* BPM scritto a mano: si apre toccando il BPM o la percentuale sotto il fader */
+#info .c-tempo, #tPct { cursor: pointer; }
+.bpm-in {
+  display: block; width: 100%; box-sizing: border-box; margin-top: calc(var(--u) * 16);
+  padding: calc(var(--u) * 10) calc(var(--u) * 14); border-radius: calc(var(--u) * 10);
+  background: var(--oled, #040507); color: #fff; border: 1px solid var(--hw-line, #2a2f3a); outline: none;
+  font-family: inherit; font-weight: 700; font-size: calc(var(--u) * 44); line-height: 1.1;
+  font-variant-numeric: tabular-nums; text-align: center; letter-spacing: .02em;
+}
+.bpm-in:focus { border-color: var(--amber2, #ff9f1c); box-shadow: 0 0 0 1px var(--amber2, #ff9f1c); }
+.modal.top { align-items: flex-start; padding-top: calc(var(--u) * 36); }
