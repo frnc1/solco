@@ -11,7 +11,7 @@
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const normTxt = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
-  const VERSION = '1.2.0';
+  const VERSION = '1.2.1';
   const LETTERS = 'ABCDEFGH';
   const HOT_COLORS = ['#ff4d5e', '#ff9f1c', '#ffd23f', '#34d77b', '#2fd0c2', '#4c8dff', '#8b6bff', '#ff5fb4'];
   const RANGES = [6, 8, 10, 16, 50];
@@ -1461,7 +1461,7 @@
       '<div class="sd">' + (navigator.requestMIDIAccess || isAndroidApp ? 'Collega la jog con il cavo USB: viene riconosciuta da sola.' : 'Questo browser non supporta i controller MIDI: usa Chrome o l’app SOLCO.') + '</div></div>' +
       '<div class="set-ctl"><button class="pill" id="mReset">MAPPATURA SOLCO</button></div></div>' +
       '<div class="set-row"><div><div class="sl">Jog di altri controller: scatti per giro</div><div class="sd">Serve solo per controller diversi dalla jog SOLCO, se lo scratch risulta troppo veloce o lento.</div></div><div class="set-ctl"><input type="range" min="128" max="4096" step="64" id="mTicks" value="' + S.ticksPerRev + '"><span class="rv" id="mTicksV">' + S.ticksPerRev + '</span></div></div>' +
-      '<div class="set-sec">ASSEGNA I COMANDI</div><div class="sd" style="margin:6px 0 4px">Tocca ASSEGNA, poi muovi o premi il comando sul controller.</div>' +
+      '<div class="set-sec">ASSEGNA I COMANDI</div><div class="sd" style="margin:6px 0 4px">Tocca ASSEGNA, poi muovi o premi il comando sul controller. Se la jog risponde solo quando la tocchi sopra (o solo sul bordo), assegna anche «Jog (bordo)».</div>' +
       '<div class="map-grid" id="mGrid"></div>' +
       '<div class="set-sec">MONITOR MIDI</div><div class="mon" id="mMon">' + esc(monLines.join('\n') || 'Premi un tasto sul controller per vedere cosa arriva.') + '</div>';
     const grid = body.querySelector('#mGrid');

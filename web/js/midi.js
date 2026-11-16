@@ -8,7 +8,7 @@
   // funzioni assegnabili: id, etichetta, tipo
   const FUNCS = [
     ['play', 'Play / Pausa', 'btn'], ['cue', 'Cue', 'btn'],
-    ['jog', 'Jog (rotazione)', 'jog'], ['jogTouch', 'Jog (tocco)', 'btn'], ['tempo', 'Fader tempo', 'abs'],
+    ['jog', 'Jog (rotazione)', 'jog'], ['jog2', 'Jog (bordo)', 'jog'], ['jogTouch', 'Jog (tocco)', 'btn'], ['tempo', 'Fader tempo', 'abs'],
     ['keylock', 'Key lock', 'btn'], ['range', 'Range tempo', 'btn'], ['tempoReset', 'Tempo a zero', 'btn'],
     ['hot1', 'Hot cue A', 'btn'], ['hot2', 'Hot cue B', 'btn'], ['hot3', 'Hot cue C', 'btn'], ['hot4', 'Hot cue D', 'btn'],
     ['hot5', 'Hot cue E', 'btn'], ['hot6', 'Hot cue F', 'btn'], ['hot7', 'Hot cue G', 'btn'], ['hot8', 'Hot cue H', 'btn'],
@@ -48,7 +48,9 @@
       this.nativeDevices = [];
       this.learnFn = null; this.learnCb = null;
       this.monitor = null;               // callback per il monitor MIDI
-      this.jogLast = null;
+      this.jogLast = null; this.jog2Last = null;
+      this.learnPend = null; this.learnTimer = null;   // fader su CC: attesa per capire se è a 14 bit
+      this.hi = new Map();                             // fader a 14 bit su CC: ultimo byte alto e basso
       this.ticksPerRev = 2048;
       this.onDevices = null;
       // ponte per l'app Android: il codice nativo chiama queste funzioni
@@ -61,7 +63,11 @@
     resetMap() { this.map = defaultMap(); this.reindex(); }
     reindex() {
       this.index.clear();
-      for (const e of this.map) this.index.set(e.type + ':' + e.ch + ':' + (e.type === 'pb' ? 0 : e.num), e);
+      for (const e of this.map) {
+        this.index.set(e.type + ':' + e.ch + ':' + (e.type === 'pb' ? 0 : e.num), e);
+        if (e.mode === 'abs14cc' && e.lsb != null) this.index.set('cc:' + e.ch + ':' + e.lsb, e);
+      }
+      if (this.hi) this.hi.clear();
     }
 
     async init() {
@@ -85,8 +91,9 @@
       if (this.onDevices) this.onDevices(this.devices);
     }
 
-    learn(fn, cb) { this.learnFn = fn; this.learnCb = cb; this.jogLast = null; }
-    cancelLearn() { this.learnFn = null; this.learnCb = null; }
+    learn(fn, cb) { this.clearPend(); this.learnFn = fn; this.learnCb = cb; this.jogLast = null; this.jog2Last = null; }
+    cancelLearn() { this.clearPend(); this.learnFn = null; this.learnCb = null; }
+    clearPend() { if (this.learnTimer) clearTimeout(this.learnTimer); this.learnTimer = null; this.learnPend = null; }
 
     handle(data, ts) {
       if (!data || data.length < 2) return;
@@ -106,17 +113,40 @@
 
     doLearn(ev) {
       if (ev.type === 'note' && ev.val === 0) return; // aspetta la pressione
+      if (this.learnPend && ev.type !== 'cc') return;
       const fdef = FUNCS.find((f) => f[0] === this.learnFn);
       const kind = fdef ? fdef[2] : 'btn';
+      if (ev.type === 'cc' && kind === 'abs') {
+        // molti fader mandano due CC (n e n+32, 14 bit): ascolta un attimo prima di decidere
+        if (!this.learnPend) {
+          this.learnPend = { ch: ev.ch, nums: [ev.num] };
+          this.learnTimer = setTimeout(() => this.finishAbsLearn(), 300);
+        } else if (ev.ch === this.learnPend.ch && !this.learnPend.nums.includes(ev.num)) this.learnPend.nums.push(ev.num);
+        return;
+      }
       let mode = 'btn';
       if (ev.type === 'pb') mode = 'abs14';
       else if (ev.type === 'cc') {
-        if (kind === 'abs') mode = 'abs7';
-        else if (kind === 'btn') mode = 'ccbtn';
+        if (kind === 'btn') mode = 'ccbtn';
         else mode = (ev.val >= 56 && ev.val <= 72) ? 'rel64' : 'rel2c';
       }
-      const entry = { fn: this.learnFn, type: ev.type, ch: ev.ch, num: ev.num, mode };
-      this.map = this.map.filter((m) => m.fn !== entry.fn && !(m.type === entry.type && m.ch === entry.ch && (m.type === 'pb' || m.num === entry.num)));
+      this.commitLearn({ fn: this.learnFn, type: ev.type, ch: ev.ch, num: ev.num, mode });
+    }
+
+    finishAbsLearn() {
+      const p = this.learnPend;
+      this.learnPend = null; this.learnTimer = null;
+      if (!p || !this.learnFn) return;
+      const msb = p.nums.find((n) => n < 32 && p.nums.includes(n + 32));
+      this.commitLearn(msb !== undefined
+        ? { fn: this.learnFn, type: 'cc', ch: p.ch, num: msb, lsb: msb + 32, mode: 'abs14cc' }
+        : { fn: this.learnFn, type: 'cc', ch: p.ch, num: p.nums[0], mode: 'abs7' });
+    }
+
+    commitLearn(entry) {
+      const uses = (m, n) => m.num === n || (m.lsb != null && m.lsb === n);
+      this.map = this.map.filter((m) => m.fn !== entry.fn && !(m.type === entry.type && m.ch === entry.ch &&
+        (m.type === 'pb' || uses(m, entry.num) || (entry.lsb != null && uses(m, entry.lsb)))));
       this.map.push(entry);
       this.reindex();
       const cb = this.learnCb;
@@ -125,20 +155,22 @@
     }
 
     dispatch(e, ev) {
-      if (e.fn === 'jog') {
+      if (e.fn === 'jog' || e.fn === 'jog2') {
+        // «Jog (bordo)»: alcuni controller mandano la rotazione del bordo su un CC a parte
+        const lk = e.fn === 'jog2' ? 'jog2Last' : 'jogLast';
         let d = 0;
         if (e.mode === 'abs14') {
           const v = ev.val;
-          if (this.jogLast !== null) {
-            let dv = v - this.jogLast;
+          if (this[lk] !== null) {
+            let dv = v - this[lk];
             if (dv > 8192) dv -= 16384; else if (dv < -8192) dv += 16384;
             d = dv / 16384;
           }
-          this.jogLast = v;
+          this[lk] = v;
         } else if (e.mode === 'abs7') {
           const v = ev.val;
-          if (this.jogLast !== null) { let dv = v - this.jogLast; if (dv > 64) dv -= 128; else if (dv < -64) dv += 128; d = dv / 128; }
-          this.jogLast = v;
+          if (this[lk] !== null) { let dv = v - this[lk]; if (dv > 64) dv -= 128; else if (dv < -64) dv += 128; d = dv / 128; }
+          this[lk] = v;
         } else if (e.mode === 'rel64') d = (ev.val - 64) / this.ticksPerRev;
         else d = (ev.val > 64 ? ev.val - 128 : ev.val) / this.ticksPerRev;
         if (d) this.onAction('jog', d, ev);
@@ -147,6 +179,14 @@
       if (e.mode === 'btn') { this.onAction(e.fn, ev.val, ev); return; }
       if (e.mode === 'ccbtn') { this.onAction(e.fn, ev.val > 63 ? 1 : 0, ev); return; }
       if (e.mode === 'abs14') { this.onAction(e.fn, ev.val / 16383, ev); return; }
+      if (e.mode === 'abs14cc') {
+        // byte alto (CC n) e basso (CC n+32) in qualsiasi ordine: si usa sempre l'ultimo di ciascuno
+        const st = this.hi.get(e.fn) || { msb: -1, lsb: 0 };
+        if (ev.num === e.lsb) st.lsb = ev.val; else st.msb = ev.val;
+        this.hi.set(e.fn, st);
+        if (st.msb >= 0) this.onAction(e.fn, ((st.msb << 7) | st.lsb) / 16383, ev);
+        return;
+      }
       if (e.mode === 'abs7') { this.onAction(e.fn, ev.val / 127, ev); return; }
       if (e.mode === 'rel64') { this.onAction(e.fn, ev.val - 64, ev); return; }
       if (e.mode === 'rel2c') { this.onAction(e.fn, ev.val > 64 ? ev.val - 128 : ev.val, ev); return; }
@@ -157,7 +197,7 @@
       if (!e) return '—';
       const ch = 'can. ' + (e.ch + 1);
       if (e.type === 'note') return 'Nota ' + e.num + ' · ' + ch;
-      if (e.type === 'cc') return 'CC ' + e.num + ' · ' + ch;
+      if (e.type === 'cc') return 'CC ' + e.num + (e.lsb != null ? '+' + e.lsb + ' (14 bit)' : '') + ' · ' + ch;
       return 'Pitch bend · ' + ch;
     }
   }
