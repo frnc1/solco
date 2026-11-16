@@ -11,7 +11,7 @@
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const normTxt = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
-  const VERSION = '1.1.0';
+  const VERSION = '1.2.0';
   const LETTERS = 'ABCDEFGH';
   const HOT_COLORS = ['#ff4d5e', '#ff9f1c', '#ffd23f', '#34d77b', '#2fd0c2', '#4c8dff', '#8b6bff', '#ff5fb4'];
   const RANGES = [6, 8, 10, 16, 50];
@@ -1096,6 +1096,7 @@
 
   /* ------------------------------ libreria ------------------------------ */
   let brSel = null, brCompat = false, brQuery = '';
+  let brGenre = '', brGenreLabel = '';       // filtro per genere (dai tag dei file)
   function hashStr(s) { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return (h >>> 0).toString(36); }
   async function thumb(artwork) {
     try {
@@ -1198,6 +1199,7 @@
       arr = arr.filter((t) => normTxt(t.title + ' ' + t.artist + ' ' + t.album + ' ' + t.label + ' ' + t.genre).includes(q));
     }
     if (brCompat && D.track) arr = arr.filter((t) => t.id !== D.track.id && compatible(D.track, t));
+    if (brGenre) arr = arr.filter((t) => normTxt((t.genre || '').trim()) === brGenre);
     const s = S.sort;
     const cmp = {
       added: (a, b) => b.added - a.added,
@@ -1220,7 +1222,7 @@
     const cls = 'row' + (brSel === t.id ? ' sel' : '') + (D.track && D.track.id === t.id ? ' loaded' : '') + (played ? ' played' : '');
     return '<div class="' + cls + '" data-id="' + t.id + '">' +
       '<div class="ra">' + (u ? '<img alt="" loading="lazy" src="' + u + '">' : '') + '</div>' +
-      '<div class="rt"><b>' + esc(t.title) + '</b><span>' + esc(t.artist || '—') + '</span></div>' +
+      '<div class="rt"><b>' + esc(t.title) + '</b><span>' + esc(t.artist || '—') + (t.genre ? ' · ' + esc(t.genre) : '') + '</span></div>' +
       '<div class="rb">' + (t.bpm ? Number(t.bpm).toFixed(2) : (t.analyzed ? '—' : '')) + '</div>' +
       '<div class="rk">' + keyChipHTML(t) + '</div>' +
       '<div class="rd">' + (t.duration ? fmtDur(t.duration) : '') + '</div>' +
@@ -1232,7 +1234,7 @@
     if (!tracks.length) {
       list.innerHTML = '<div class="br-empty"><b>La libreria è vuota.</b><br>Tocca <b>+ IMPORTA</b> e scegli i file audio salvati sul tablet<br>(MP3, AIFF, WAV, FLAC, M4A). Vengono copiati nell’app e analizzati una volta sola.</div>';
     } else if (!arr.length) {
-      list.innerHTML = '<div class="br-empty">Nessun brano corrisponde' + (brCompat ? ' (filtro COMPATIBILI attivo)' : '') + '.</div>';
+      list.innerHTML = '<div class="br-empty">Nessun brano corrisponde' + (brCompat ? ' (filtro COMPATIBILI attivo)' : '') + (brGenre ? ' (genere ' + esc(brGenreLabel) + ')' : '') + '.</div>';
     } else list.innerHTML = arr.map(rowHTML).join('');
     updateBrStatus();
   }
@@ -1243,8 +1245,9 @@
   function updateBrStatus() {
     const todo = tracks.filter((t) => !t.analyzed && !t.anaFailed).length;
     const sel = tracks.find((t) => t.id === brSel);
+    const nG = brGenre ? tracks.filter((t) => normTxt((t.genre || '').trim()) === brGenre).length : 0;
     $('#brStatus').textContent = sel ? sel.title + (sel.artist ? ' — ' + sel.artist : '') :
-      (tracks.length + (tracks.length === 1 ? ' brano' : ' brani') + (todo ? ' · ' + todo + ' da analizzare' : ''));
+      ((brGenre ? brGenreLabel + ': ' + nG + ' di ' : '') + tracks.length + (tracks.length === 1 ? ' brano' : ' brani') + (todo ? ' · ' + todo + ' da analizzare' : ''));
     $('#brLoad').disabled = !sel;
   }
   function openBrowser() {
@@ -1329,6 +1332,31 @@
   $('#fileInput').addEventListener('change', (e) => { importFiles(e.target.files); e.target.value = ''; });
   $('#brLoad').addEventListener('click', browseLoad);
   $('#brSearch').addEventListener('input', (e) => { brQuery = e.target.value; renderList(); });
+  function updateGenreBtn() {
+    const b = $('#brGenre');
+    b.textContent = brGenre ? brGenreLabel.toUpperCase() : 'GENERE';
+    b.classList.toggle('on', !!brGenre);
+  }
+  $('#brGenre').addEventListener('click', async () => {
+    const map = new Map();
+    tracks.forEach((t) => {
+      const g = (t.genre || '').trim();
+      if (!g) return;
+      const k = normTxt(g);
+      const e = map.get(k) || { label: g, n: 0 };
+      e.n++;
+      map.set(k, e);
+    });
+    if (!map.size) { toast('Nessun genere nei brani: FLAC, AIFF e MP3 lo hanno nei tag, i WAV di solito no'); return; }
+    const items = [...map.entries()].sort((a, b) => a[1].label.localeCompare(b[1].label, 'it'));
+    const btns = [{ label: 'ANNULLA', value: null }, { label: 'TUTTI', value: '*', cls: 'pill' + (brGenre ? '' : ' on') }]
+      .concat(items.map(([k, e]) => ({ label: esc(e.label) + ' <small>' + e.n + '</small>', value: k, cls: 'pill' + (brGenre === k ? ' on' : '') })));
+    const v = await modal('<h3>Genere</h3>Mostra solo i brani di un genere. Dentro il genere puoi ordinare per BPM o CAMELOT.', btns);
+    if (v === null || v === undefined) return;
+    if (v === '*') { brGenre = ''; brGenreLabel = ''; } else { brGenre = v; brGenreLabel = map.get(v).label; }
+    updateGenreBtn();
+    renderList();
+  });
   $('#brCompat').addEventListener('click', () => {
     if (!D.track) { toast('Carica prima un brano: mostro quelli compatibili per BPM e tonalità'); return; }
     brCompat = !brCompat; $('#brCompat').classList.toggle('on', brCompat); renderList();

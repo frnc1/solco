@@ -353,7 +353,8 @@ svg { display: block; }
 #app.touch-on #brImport { order: 2; }
 #app.touch-on #brClose { order: 3; }
 #app.touch-on #brSort { order: 4; }
-#app.touch-on #brCompat { order: 5; margin-left: auto; }
+#app.touch-on #brGenre { order: 5; margin-left: auto; }
+#app.touch-on #brCompat { order: 6; }
 
 /* impostazioni */
 .set-title { font-size: calc(var(--u) * 18); font-weight: 600; margin-right: auto; }
@@ -385,6 +386,9 @@ svg { display: block; }
 .mtext { font-size: calc(var(--u) * 16); line-height: 1.5; margin-bottom: calc(var(--u) * 18); }
 .mtext h3 { margin: 0 0 calc(var(--u) * 6); font-size: calc(var(--u) * 18); font-weight: 600; }
 .mbtns { display: flex; flex-wrap: wrap; gap: calc(var(--u) * 10); justify-content: flex-end; }
+#brGenre { max-width: calc(var(--u) * 230); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mbtns { max-height: 62vh; overflow-y: auto; }
+.mbtns small { opacity: .6; margin-left: .35em; font-weight: 600; }
 .mbtns .swatch { width: calc(var(--u) * 40); height: calc(var(--u) * 40); border-radius: calc(var(--u) * 8); }
 .toast { position: fixed; left: 50%; top: calc(var(--u) * 58); max-width: 92vw; transform: translate(-50%, -20px); z-index: 70; background: var(--panel3); border: 1px solid var(--line2);
   border-radius: calc(var(--u) * 10); padding: calc(var(--u) * 10) calc(var(--u) * 18); font-size: calc(var(--u) * 14.5); opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; box-shadow: 0 10px 30px rgba(0, 0, 0, .5); }

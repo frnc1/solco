@@ -10,6 +10,12 @@ Un tablet Android diventa un lettore da collegare al mixer: forma d'onda, BPM e 
 
 Per aggiornare basta installare il nuovo `solco.apk` sopra quello vecchio: libreria, cue e impostazioni restano.
 
+## Lista dei brani
+
+- **Ordine**: RECENTI, TITOLO, ARTISTA, BPM oppure **CAMELOT** (1A, 1B, 2A… e, a pari chiave, per BPM).
+- **GENERE**: mostra solo i brani di un genere, preso dai tag del file. FLAC, AIFF, MP3 e M4A possono averlo; i WAV di solito no. Dentro il genere puoi ordinare per BPM o CAMELOT.
+- **COMPATIBILI**: solo i brani entro il 6% di BPM da quello caricato e in chiave compatibile (stesso numero, oppure numero accanto con la stessa lettera).
+
 ## Comandi a schermo
 
 Senza la jog fisica collegata l'app mostra tutti i comandi sullo schermo. In **verticale** (di serie) la disposizione è quella di un lettore da club: schermo sopra, hot cue e loop, jog al centro, fader del tempo a destra, CUE e PLAY in basso a sinistra.
