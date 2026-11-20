@@ -5,9 +5,13 @@
 // brano alla stessa velocità del disco: pitch del giradischi = tempo, disco fermo = brano
 // fermo, scratch = scratch.
 //
-// Protocollo (canale MIDI 13, control change):
-//   CC 102 / 103 / 104  giri al minuto × 4000 con segno, 21 bit (alto / medio / basso,
-//                       spostati di 2^20). SOLCO applica il valore all'arrivo del CC 104.
+// Protocollo (canale MIDI 13). Ogni 10 ms (50 ms a disco fermo) UN pacchetto con 4 messaggi:
+//   80 tt tt   orario del puck in decimi di millisecondo (14 bit, riparte ogni 1,6384 s)
+//   90 aa aa   angolo del disco, bit 0-13 (angolo in 1/524288 di giro, 21 bit, riparte ogni 4 giri)
+//   A0 aa rr   angolo bit 14-20, giri al minuto bit 0-6
+//   E0 rr rr   giri al minuto bit 7-20 (giri al minuto × 4000 con segno, spostati di 2^20)
+// Con orario e angolo SOLCO fa seguire al brano la POSIZIONE del disco.
+// Ogni secondo:
 //   CC 105              batteria in %
 //   CC 106              stato: bit0 calibrato, bit1 calibrazione in corso, bit2 in carica
 //
@@ -20,9 +24,10 @@
 #include <M5Unified.h>
 #include <NimBLEDevice.h>
 #include <Preferences.h>
+#include <esp_timer.h>
 #include <math.h>
 
-#define FW_VERSION "1.0"
+#define FW_VERSION "1.1"
 
 static const char* MIDI_SVC = "03B80E5A-EDE8-4B33-A751-6CE34EC4C700";
 static const char* MIDI_CHR = "7772E5DB-3868-4112-A1A9-F2669D106BF3";
@@ -79,17 +84,22 @@ static void sendMsgs(const uint8_t m[][3], int n) {
   chr->notify(buf, k);
 }
 
-static void sendSpeed(float rpm) {
+// orario e angolo dell'ultima lettura del giroscopio + giri al minuto, in un solo pacchetto (17 byte)
+static void sendFrame(int64_t us, double turns, float rpm) {
+  uint16_t t = (uint16_t)((us / 100) & 0x3FFF);
+  uint32_t a = (uint32_t)((int64_t)floor(turns * 524288.0) & 0x1FFFFF);
   int32_t v = lroundf(rpm * SCALE);
   if (v > ZERO - 1) v = ZERO - 1;
   if (v < -(ZERO - 1)) v = -(ZERO - 1);
   uint32_t u = (uint32_t)(v + ZERO);
-  const uint8_t m[3][3] = {
-    { ST_CC, 102, (uint8_t)((u >> 14) & 0x7F) },
-    { ST_CC, 103, (uint8_t)((u >> 7) & 0x7F) },
-    { ST_CC, 104, (uint8_t)(u & 0x7F) },
+  const uint8_t c = 12;   // canale 13
+  const uint8_t m[4][3] = {
+    { (uint8_t)(0x80 | c), (uint8_t)(t >> 7), (uint8_t)(t & 0x7F) },
+    { (uint8_t)(0x90 | c), (uint8_t)((a >> 7) & 0x7F), (uint8_t)(a & 0x7F) },
+    { (uint8_t)(0xA0 | c), (uint8_t)((a >> 14) & 0x7F), (uint8_t)(u & 0x7F) },
+    { (uint8_t)(0xE0 | c), (uint8_t)((u >> 7) & 0x7F), (uint8_t)((u >> 14) & 0x7F) },
   };
-  sendMsgs(m, 3);
+  sendMsgs(m, 4);
 }
 
 // ---------------- misura ----------------
@@ -101,6 +111,8 @@ static bool calibrated = false;
 static float calTarget = 0;
 
 static double accSum = 0; static uint32_t accN = 0; static float lastDps = 0;
+// angolo del disco: somma dei giri letti dal giroscopio, campione per campione (800 al secondo)
+static double revs = 0; static int64_t lastSampleUs = 0, angleUs = 0;   // microsecondi da accensione (non ripartono)
 static double winSum = 0, winSq = 0; static uint32_t winN = 0, winStart = 0;
 static bool forceZero = false;
 static uint32_t lastBiasSave = 0;
@@ -131,6 +143,14 @@ static void gyroFast() {
 }
 
 static void addSample(float gz) {
+  int64_t us = esp_timer_get_time();
+  if (lastSampleUs != 0) {
+    float dt = (us - lastSampleUs) * 1e-6f;
+    if (dt > 0.02f) dt = 0.02f;                       // dopo una pausa non si inventa movimento
+    float rps = (gz - bias) / 360.0f * scale;         // giri al secondo del disco (segno compreso)
+    if (fabsf(rps) * 60.0f >= 0.05f) revs += (double)rps * dt;   // sotto 0,05 giri al minuto: fermo
+  }
+  lastSampleUs = us; angleUs = us;
   accSum += gz; accN++;
   winSum += gz; winSq += (double)gz * gz; winN++;
   if (mode == CAL_MEASURE) {
@@ -275,7 +295,7 @@ void loop() {
     float out = fabsf(rpmOut) < 0.05f ? 0.0f : rpmOut;
     rpmShow = out;
     if (out != 0) lastMove = now;
-    sendSpeed(out);
+    sendFrame(angleUs, revs, out);
     nextSend = now + ((out == 0 && now - lastMove > 2000) ? 50 : 10);
   }
 

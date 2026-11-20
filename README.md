@@ -18,6 +18,10 @@ Per aggiornare basta installare il nuovo `solco.apk` sopra quello vecchio: libre
 - **GENERE**: mostra solo i brani di un genere, preso dai tag del file. FLAC, AIFF, MP3 e M4A possono averlo; i WAV di solito no. Dentro il genere puoi ordinare per BPM o CAMELOT.
 - **COMPATIBILI**: solo i brani entro il 6% di BPM da quello caricato e in chiave compatibile (stesso numero, oppure numero accanto con la stessa lettera).
 
+## Smartphone
+
+Sugli schermi piccoli SOLCO usa da solo la disposizione **smartphone**: niente jog e fader a schermo (si suona col giradischi e il puck, o con un controller), SLIP e KEY LOCK passano nella fila dei tasti in basso, tutto il resto più grande. Il BPM si può comunque scrivere toccando il BPM. *Impostazioni → Schermo → Disposizione*: AUTO, TABLET o SMARTPHONE.
+
 ## Comandi a schermo
 
 Senza la jog fisica collegata l'app mostra tutti i comandi sullo schermo. In **verticale** (di serie) la disposizione è quella di un lettore da club: schermo sopra, hot cue e loop, jog al centro, fader del tempo a destra, CUE e PLAY in basso a sinistra.
@@ -57,6 +61,8 @@ Un **M5StickS3** sopra il disco misura quanto gira il disco e lo manda al tablet
 
 In SOLCO con il puck collegato: PLAY non serve (comanda il disco), CUE riporta al punto di cue, il BPM sullo schermo segue il pitch del giradischi. Se il puck smette di rispondere, SOLCO tiene l'ultima velocità del disco. *Impostazioni → Comandi → Giradischi: SPENTO* torna ai comandi normali. Programma e protocollo in `firmware/puck/`.
 
+**Scratch (programma del puck 1.1).** Il puck manda anche l'angolo del disco e il proprio orario: il brano segue la **posizione** del disco, non solo la velocità, quindi il punto dello scratch resta sotto l'adesivo anche dopo cento avanti e indietro. *Impostazioni → Comandi → Risposta allo scratch*: **PRONTA** (meno ritardo, predefinita) o **PRECISA** (movimento ancora più fedele se il Bluetooth è irregolare). Con il programma 1.0 SOLCO segue solo la velocità: aggiorna il puck con il nuovo `solco-puck.bin`.
+
 ## Jog, pulsanti e supporto da stampare
 
 Tutto in `hardware/`: lista della spesa senza saldature, piatti `.3mf` pronti per la stampante, montaggio e schema dei collegamenti (`hardware/README.md`). Il programma della scheda è in `firmware/`.
@@ -67,7 +73,7 @@ Tutto in `hardware/`: lista della spesa senza saldature, piatti `.3mf` pronti pe
 |---|---|
 | `web/` | L'app vera e propria (HTML, CSS, JavaScript). Motore audio in AudioWorklet (`js/worklet.js`), analisi dei brani in un Web Worker (`js/analysis.js`). |
 | `android/` | Contenitore Android: WebView a schermo intero, comandi MIDI via USB, selettore dei file. |
-| `tests/` | Test del motore audio e dell'analisi (`node tests/engine.test.js`, `node tests/analysis.test.js`), del firmware (`python3 tests/firmware_test.py`) e dell'interfaccia in Chrome headless: jog a schermo (`python3 tests/ui_jog_test.py`), filtro per genere (`python3 tests/ui_genre_test.py`), assegnazione di controller MIDI qualsiasi (`python3 tests/ui_midi_learn_test.py`), BPM scritto a mano (`python3 tests/ui_bpm_test.py`), giradischi con puck (`python3 tests/ui_turntable_test.py`). |
+| `tests/` | Test del motore audio e dell'analisi (`node tests/engine.test.js`, `node tests/analysis.test.js`), del firmware (`python3 tests/firmware_test.py`) e dell'interfaccia in Chrome headless: jog a schermo (`python3 tests/ui_jog_test.py`), filtro per genere (`python3 tests/ui_genre_test.py`), assegnazione di controller MIDI qualsiasi (`python3 tests/ui_midi_learn_test.py`), BPM scritto a mano (`python3 tests/ui_bpm_test.py`), giradischi con puck (`python3 tests/ui_turntable_test.py`), disposizione smartphone (`python3 tests/ui_phone_test.py`); simulazione dello scratch col Bluetooth (`node tests/vc_sim.js`). |
 | `hardware/` | Pezzi da stampare (`stampa/`), anteprime, generatore dei modelli (`cad/`). |
 | `firmware/` | Programma CircuitPython per il Pico H della jog. |
 | `.github/workflows/apk.yml` | Ogni modifica sul ramo `main` compila un nuovo `solco.apk` e lo pubblica tra le Releases. |

@@ -11,7 +11,7 @@
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const normTxt = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
-  const VERSION = '1.4.0';
+  const VERSION = '1.5.0';
   const LETTERS = 'ABCDEFGH';
   const HOT_COLORS = ['#ff4d5e', '#ff9f1c', '#ffd23f', '#34d77b', '#2fd0c2', '#4c8dff', '#8b6bff', '#ff5fb4'];
   const RANGES = [6, 8, 10, 16, 50];
@@ -29,7 +29,7 @@
     rangeIdx: 2, keyLock: false, quantize: true, jumpBeats: 16, loopBeats: 4, autoCue: true,
     invertFader: false, needle: 'paused', timeMode: 'remain', palette: 'solco', endWarn: 30,
     touchControls: 'auto', zoomSec: 6, ticksPerRev: 2048, sort: 'added', orient: 'portrait',
-    turntable: 'auto', ttBase: 33,
+    turntable: 'auto', ttBase: 33, ttResp: 'fast', layout: 'auto',
   };
   let S = Object.assign({}, DEFAULTS);
 
@@ -155,7 +155,9 @@
     if (k === 'quantize' || k === 'jogMode') updateChips();
     if (k === 'jumpBeats' || k === 'loopBeats') updateChips();
     if (k === 'orient') applyOrientation();
+    if (k === 'layout') { layoutPhone = null; updateTouchVisibility(); }
     if (k === 'turntable' && S.turntable === 'off') ttStop('Giradischi spento: tornano i comandi normali');
+    if (k === 'ttBase' || k === 'ttResp') engine.send({ t: 'vcCfg', spr: 60 / ttBase(), pct: S.ttResp === 'precise' ? 0.9 : 0.6 });
   }
   function setS(k, v) {
     // cambiando il range del fader il tempo resta quello di prima (il fader si sposta)
@@ -184,8 +186,12 @@
       TT.rate = m.rpm / ttBase();
       if (!TT.on) ttStart();
       if (TT.lost) { TT.lost = false; toast('Puck di nuovo collegato'); }
-      engine.send({ t: 'vcRate', r: TT.rate });
-      TT.disp += (Math.abs(TT.rate) - TT.disp) * 0.08;
+      // firmware 1.1: orario e angolo → il brano segue la posizione del disco; prima: solo la velocità
+      if (m.tp !== undefined) engine.send({ t: 'vcPt', tp: m.tp, a: m.a, w: m.rpm / 60, reset: m.reset });
+      else engine.send({ t: 'vcRate', r: TT.rate });
+      // valore a schermo: a disco fermo resta l'ultimo, i cambi veri si seguono subito, il resto si ammorbidisce
+      const absR = Math.abs(TT.rate), dd = Math.abs(absR - TT.disp);
+      if (absR > 0.05) TT.disp += (absR - TT.disp) * (dd > 0.0035 ? 0.35 : 0.06);
       if (now - TT.uiT > 120) { TT.uiT = now; updateTempoUI(); const st = $('#ttStat'); if (st) st.textContent = ttStatus(); }
     }
     if (m.bat !== undefined) {
@@ -201,6 +207,7 @@
   function ttStart() {
     TT.on = true; TT.lost = false; TT.disp = Math.abs(TT.rate) || 1;
     engine.send({ t: 'vc', on: true });
+    engine.send({ t: 'vcCfg', spr: 60 / ttBase(), pct: S.ttResp === 'precise' ? 0.9 : 0.6 });
     engine.send({ t: 'vcRate', r: TT.rate });
     toast('Giradischi collegato: ora il brano segue il disco', 3000);
     updateTempoUI(); updateChips();
@@ -581,8 +588,34 @@
     const ctl = midi.devices.filter((n) => !/^SOLCO Puck/i.test(n)).length;
     const on = S.touchControls === 'on' || (S.touchControls === 'auto' && ctl === 0);
     $('#app').classList.toggle('touch-on', on);
-    jogVisible = on;
+    applyLayout();
+    jogVisible = on && !isPhone();
     requestAnimationFrame(resize);
+  }
+
+  /* Disposizione per smartphone: niente jog e fader a schermo (si suona col giradischi o col controller),
+     SLIP e KEY LOCK passano nella fila dei tasti in basso. AUTO: smartphone se il lato corto è sotto 600 punti. */
+  function isPhone() {
+    if (S.layout === 'phone') return true;
+    if (S.layout === 'tablet') return false;
+    return Math.min(window.screen.width || 9999, window.screen.height || 9999) < 600;
+  }
+  const slipHome = { el: $('#tSlip'), parent: $('#tSlip').parentNode, next: $('#tSlip').nextSibling, cls: $('#tSlip').className };
+  const klHome = { el: $('#tKL'), parent: $('#tKL').parentNode, next: $('#tKL').nextSibling, cls: $('#tKL').className };
+  let layoutPhone = null;
+  function applyLayout() {
+    const phone = isPhone();
+    if (phone === layoutPhone) return;
+    layoutPhone = phone;
+    document.documentElement.classList.toggle('phone', phone);
+    $('#app').classList.toggle('phone', phone);
+    const tr = $('#transport'), rev = $('#tRev');
+    for (const [h, cls] of [[slipHome, 'tb tog led-green'], [klHome, 'tb tog led-cyan two']]) {
+      const on = h.el.classList.contains('on');
+      if (phone) { tr.insertBefore(h.el, rev); h.el.className = cls; }
+      else { h.parent.insertBefore(h.el, h.next); h.el.className = h.cls; }
+      h.el.classList.toggle('on', on);
+    }
   }
 
   /* ------------------------------ disegno ------------------------------ */
@@ -595,8 +628,10 @@
 
   function resize() {
     dpr = Math.min(2.5, window.devicePixelRatio || 1);
-    U = (portraitMQ.matches ? Math.min(window.innerWidth, window.innerHeight * 0.625) : Math.min(window.innerHeight, window.innerWidth * 0.625)) / 800;
-    for (const c of [zc, oc, jc]) {
+    U = layoutPhone
+      ? (portraitMQ.matches ? Math.min(window.innerWidth / 440, window.innerHeight / 780) : Math.min(window.innerHeight / 460, window.innerWidth / 800))
+      : (portraitMQ.matches ? Math.min(window.innerWidth, window.innerHeight * 0.625) : Math.min(window.innerHeight, window.innerWidth * 0.625)) / 800;
+    for (const c of (jogVisible ? [zc, oc, jc] : [zc, oc])) {
       const r = c.getBoundingClientRect();
       const w = Math.max(1, Math.round(r.width * dpr)), h = Math.max(1, Math.round(r.height * dpr));
       if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
@@ -604,7 +639,7 @@
     const n = Math.ceil(zc.width / Math.max(1, Math.round(dpr))) + 3;
     if (bandBuf[0].length < n) bandBuf = [new Float32Array(n), new Float32Array(n), new Float32Array(n)];
     buildOverview();
-    if (jc.width !== jogBuiltW) buildJog();
+    if (jogVisible && jc.width !== jogBuiltW) buildJog();
     updateTempoUI();
   }
   const ro = new ResizeObserver(() => resize());
@@ -1544,6 +1579,7 @@
       { k: 'endWarn', label: 'Avviso di fine brano', type: 'seg', opts: [[0, 'NO'], [30, '30 s'], [60, '60 s']] },
       { k: 'palette', label: 'Colori della forma d’onda', type: 'seg', opts: [['solco', 'SOLCO'], ['ambra', 'AMBRA'], ['mono', 'MONO']] },
       { k: 'zoomSec', label: 'Zoom della forma d’onda', desc: 'Anche con due dita sulla forma d’onda; doppio tocco per tornare al valore iniziale.', type: 'range', min: 1.5, max: 30, step: 0.5, fmt: (v) => String(v).replace('.', ',') + ' s' },
+      { k: 'layout', label: 'Disposizione', desc: 'SMARTPHONE: niente jog e fader a schermo (si suona col giradischi o col controller), SLIP e KEY LOCK nella fila in basso. AUTO: smartphone se lo schermo è piccolo.', type: 'seg', opts: [['auto', 'AUTO'], ['tablet', 'TABLET'], ['phone', 'SMARTPHONE']] },
       { k: 'touchControls', label: 'Comandi a schermo', desc: 'Automatico: jog e tasti a schermo restano visibili finché non colleghi la jog fisica.', type: 'seg', opts: [['auto', 'AUTOMATICO'], ['on', 'SEMPRE'], ['off', 'MAI']] },
     ],
   };
@@ -1615,7 +1651,8 @@
       '<div class="set-sec">MONITOR MIDI</div><div class="mon" id="mMon">' + esc(monLines.join('\n') || 'Premi un tasto sul controller per vedere cosa arriva.') + '</div>';
     const ttRows = body.querySelector('#ttRows');
     [{ k: 'turntable', label: 'Giradischi', desc: 'AUTO: appena arrivano i dati del puck, il disco comanda il brano. SPENTO: il puck viene ignorato.', type: 'seg', opts: [['auto', 'AUTO'], ['off', 'SPENTO']] },
-      { k: 'ttBase', label: 'Velocità del giradischi', desc: 'La stessa impostata sul giradischi: a pitch 0 il brano va alla sua velocità originale.', type: 'seg', opts: [[33, '33 GIRI'], [45, '45 GIRI']] }]
+      { k: 'ttBase', label: 'Velocità del giradischi', desc: 'La stessa impostata sul giradischi: a pitch 0 il brano va alla sua velocità originale.', type: 'seg', opts: [[33, '33 GIRI'], [45, '45 GIRI']] },
+      { k: 'ttResp', label: 'Risposta allo scratch', desc: 'PRONTA: il brano risponde prima al disco. PRECISA: qualche millesimo di ritardo in più, movimento ancora più fedele se il Bluetooth è irregolare. Serve il puck con programma 1.1.', type: 'seg', opts: [['fast', 'PRONTA'], ['precise', 'PRECISA']] }]
       .forEach((it) => ttRows.appendChild(settingRow(it)));
     body.querySelector('#ttScan').onclick = ttScan;
     const grid = body.querySelector('#mGrid');

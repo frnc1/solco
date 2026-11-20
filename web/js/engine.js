@@ -18,6 +18,7 @@
       this.pending = new Map(); this.seq = 1;
       this.mode = 'none';
       this.loadId = 0;
+      this.hist = [];
     }
     on(ev, fn) { (this.handlers[ev] = this.handlers[ev] || []).push(fn); }
     emit(ev, d) { (this.handlers[ev] || []).forEach((f) => f(d)); }
@@ -66,7 +67,30 @@
     send(m, transfer) { if (this.port) this.port.postMessage(m, transfer || []); }
 
     onMsg(m) {
-      if (m.t === 'pos') { this.rep = m; this.emit('pos', m); }
+      if (m.t === 'pos') {
+        this.rep = m;
+        if (m.ct > 0) {
+          const h = this.hist;
+          const prev = h.length ? h[h.length - 1] : null;
+          let jump = false;
+          if (prev) {
+            const dt = m.ct - prev.ct;
+            if (dt <= 0) {
+              h.length = 0;
+            } else {
+              const maxRate = Math.max(Math.abs(m.r), Math.abs(prev.r), 1);
+              const maxMove = maxRate * dt * this.sr * 2.5 + 4096;
+              if (Math.abs(m.p - prev.p) > maxMove) {
+                if (!m.pl && !prev.pl) h.length = 0;
+                else jump = true;
+              }
+            }
+          }
+          h.push({ ct: m.ct, p: m.p, r: m.r, jump });
+          if (h.length > 48) h.shift();
+        }
+        this.emit('pos', m);
+      }
       else if (m.t === 'marked') { const r = this.pending.get(m.id); if (r) { this.pending.delete(m.id); r(m.pos); } }
       else this.emit(m.t, m);
     }
@@ -79,8 +103,27 @@
       const ts = this.ctx.getOutputTimestamp ? this.ctx.getOutputTimestamp() : null;
       if (ts && ts.contextTime > 0 && ts.performanceTime > 0) now = ts.contextTime + (performance.now() - ts.performanceTime) / 1000;
       else now = this.ctx.currentTime - (this.ctx.outputLatency || this.ctx.baseLatency || 0);
-      const dt = clamp(now - rep.ct, -0.3, 0.12);
-      let p = rep.p + rep.r * dt * this.sr;
+
+      const h = this.hist;
+      let p;
+      if (h.length && now <= rep.ct) {
+        if (now <= h[0].ct) {
+          p = h[0].p;
+        } else {
+          p = rep.p;
+          for (let i = h.length - 1; i > 0; i--) {
+            const a = h[i - 1], b = h[i];
+            if (now >= a.ct && now <= b.ct) {
+              if (b.jump || b.ct <= a.ct) p = (now >= b.ct) ? b.p : a.p;
+              else p = a.p + (b.p - a.p) * ((now - a.ct) / (b.ct - a.ct));
+              break;
+            }
+          }
+        }
+      } else {
+        const dt = clamp(now - rep.ct, 0, 0.12);
+        p = rep.p + rep.r * dt * this.sr;
+      }
       if (rep.lo && rep.lt > rep.li && p >= rep.lt) p = rep.li + ((p - rep.lt) % (rep.lt - rep.li));
       return clamp(p, 0, this.len);
     }
@@ -136,6 +179,7 @@
       }
       this.len = n;
       const id = ++this.loadId;
+      this.hist = [];
       this.rep = Object.assign({}, this.rep, { p: pos || 0, r: 0, pl: false, ct: 0, lo: false, li: -1, lt: -1 });
       this.send({ t: 'load', L, R, M4, len: n, pos: pos || 0, id }, [L.buffer, R.buffer, M4.buffer]);
       return id;

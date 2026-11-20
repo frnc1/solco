@@ -37,9 +37,10 @@ function run(d, sec) {
   const out = new Float32Array(blocks * 128);
   const l = new Float32Array(128), r = new Float32Array(128);
   for (let b = 0; b < blocks; b++) {
-    d.process(l, r, 128, b * 128 / SR);
+    d.process(l, r, 128, (d.__t || 0) + b * 128 / SR);
     out.set(l, b * 128);
   }
+  d.__t = (d.__t || 0) + blocks * 128 / SR;
   return out;
 }
 function freqOf(sig, from = 0) {
@@ -204,6 +205,74 @@ for (const tv of [0.94, 1.16]) {
   p0 = d.pos;
   run(d, 0.5);
   check('giradischi spento: il deck torna fermo e ai comandi normali', d.pos === p0 && d.playing === false);
+}
+
+// 8c) giradischi, puck 1.1: il brano segue la POSIZIONE del disco
+{
+  const t = makeSine(30, 440);
+  const { d } = newDeck(t);
+  d.onMessage({ t: 'seek', to: SR * 5 });
+  d.onMessage({ t: 'vc', on: true });
+  d.onMessage({ t: 'vcCfg', spr: 1.8 });
+  // il disco: angolo (giri) e velocità (giri/s) nel tempo del puck
+  let tp = 100, ang = 3.25, w = 1 / 1.8;
+  const step = (sec, wf) => {           // ogni 10 ms un campione, consegnato tra un blocco e l'altro
+    const blocks = Math.round(sec * SR / 128);
+    let acc = 0;
+    for (let b = 0; b < blocks; b++) {
+      acc += 128 / SR;
+      while (acc >= 0.01) {
+        acc -= 0.01; tp += 0.01;
+        const nw = wf ? wf(tp) : w;
+        ang += (w + nw) / 2 * 0.01; w = nw;
+        d.onMessage({ t: 'vcPt', tp, a: ang, w });
+      }
+      run(d, 128 / SR);
+    }
+  };
+  step(1.0);
+  let p0 = d.pos;
+  step(2.0);
+  check('posizione: disco a 33⅓ → velocità normale', Math.abs((d.pos - p0) / SR - 2) < 0.005, ((d.pos - p0) / SR).toFixed(4) + ' s');
+  // scratch avanti e indietro, il disco torna al punto: il brano deve tornare allo stesso punto
+  w = 0; step(0.3, () => 0);
+  const pa = d.pos, aa = ang;
+  let ts0 = tp;
+  step(2.0, (x) => 0.14 * Math.PI * 2.5 * Math.sin(2 * Math.PI * 2.5 * (x - ts0)));
+  w = 0; step(0.3, () => 0);
+  const slip = (d.pos - pa) - (ang - aa) * 1.8 * SR;     // il brano deve spostarsi esattamente quanto il disco
+  check('posizione: dopo 5 scratch il brano è dove dice il disco (< 1 ms)', Math.abs(slip) / SR < 0.001, (slip / SR * 1000).toFixed(3) + ' ms');
+  // CUE durante la riproduzione: salta e continua a seguire il disco da lì
+  step(0.5, () => 1 / 1.8);
+  d.onMessage({ t: 'seek', to: SR * 2 });
+  step(1.0);
+  check('posizione: dopo un salto il brano riparte da lì al passo del disco', Math.abs(d.pos / SR - 3) < 0.03, (d.pos / SR).toFixed(3) + ' s');
+  // loop: gira nel loop seguendo il disco
+  d.onMessage({ t: 'loop', in: SR * 3.1, out: SR * 3.6, on: true });
+  step(2.0);
+  check('posizione: col loop resta nel loop', d.pos >= SR * 3.1 - 1 && d.pos <= SR * 3.6 + 1, (d.pos / SR).toFixed(3) + ' s');
+  d.onMessage({ t: 'loop', on: false });
+  // il puck tace: si continua all'ultima velocità
+  p0 = d.pos;
+  run(d, 1.0);
+  check('posizione: puck muto → continua all’ultima velocità', Math.abs((d.pos - p0) / SR - 1) < 0.02, ((d.pos - p0) / SR).toFixed(3) + ' s');
+  // torna dopo una pausa (anche se l'orario del puck è ripartito): si riaggancia senza saltare
+  p0 = d.pos; tp += 3; ang += 7.77;
+  step(0.5);
+  check('posizione: al ritorno del puck nessun salto', Math.abs((d.pos - p0) / SR - 0.5) < 0.03, ((d.pos - p0) / SR).toFixed(3) + ' s');
+  // REV: il brano va all'indietro mentre il disco va avanti
+  d.onMessage({ t: 'reverse', on: true });
+  p0 = d.pos;
+  step(0.5);
+  check('posizione: con REV il brano va all’indietro', (d.pos - p0) / SR < -0.45, ((d.pos - p0) / SR).toFixed(3) + ' s');
+  d.onMessage({ t: 'reverse', on: false });
+  // key lock: attivo a velocità normale, spento durante lo scratch
+  d.onMessage({ t: 'keyLock', on: true });
+  step(0.8, () => 1.04 / 1.8);
+  check('posizione: key lock attivo col pitch a +4%', d.st.active === true);
+  ts0 = tp;
+  step(0.2, (x) => 2.5 * Math.sin(2 * Math.PI * 4 * (x - ts0)));
+  check('posizione: key lock spento durante lo scratch', d.st.active === false);
 }
 
 // 9) prestazioni: 60 s con blocco tonalità

@@ -56,7 +56,7 @@
       this.ticksPerRev = 2048;
       this.onDevices = null;
       this.onPuck = null;                // puck del giradischi (firmware in /firmware/puck)
-      this.puck = { hi: -1, mid: -1 };
+      this.puck = { hi: -1, mid: -1, seq: 0, traw: 0, alo: 0, ahi: 0, rlo: 0, lt: -1, la: 0, tu: 0, au: 0, lastTs: -1e9 };
       // ponte per l'app Android: il codice nativo chiama queste funzioni
       root.solcoMidiIn = (bytes, ts) => this.handle(bytes, ts || performance.now());
       root.solcoMidiBatch = (list) => { const now = performance.now(); for (let i = 0; i < list.length; i++) this.handle(list[i], now); };
@@ -103,7 +103,10 @@
       if (!data || data.length < 2) return;
       const s = data[0], type = s & 0xf0, ch = s & 0x0f;
       // puck del giradischi: canale 13, CC 102-106 (non passano dal monitor né dalla mappatura)
-      if (type === 0xB0 && ch === PUCK_CH && data[1] >= 102 && data[1] <= 106) { this.puckIn(data[1], data[2] | 0, ts); return; }
+      if (ch === PUCK_CH) {
+        if (type === 0xB0 && data[1] >= 102 && data[1] <= 106) { this.puckIn(data[1], data[2] | 0, ts); return; }
+        if (type === 0x80 || type === 0x90 || type === 0xA0 || type === 0xE0) { this.puckFrame(type, data[1] | 0, data[2] | 0, ts); return; }
+      }
       let ev = null;
       if (type === 0x90 || type === 0x80) ev = { type: 'note', ch, num: data[1], val: (type === 0x90 && data[2] > 0) ? 1 : 0, raw: data[2] || 0 };
       else if (type === 0xB0) ev = { type: 'cc', ch, num: data[1], val: data[2] };
@@ -117,8 +120,8 @@
       this.dispatch(e, ev);
     }
 
-    /* velocità del disco in 21 bit (CC 102 alto, 103 medio, 104 basso: si applica sul basso),
-       giri al minuto × 4000 con segno; CC 105 batteria in %, CC 106 stato */
+    /* Puck del giradischi, firmware 1.0: CC 102/103/104 = giri al minuto × 4000 con segno, 21 bit
+       (si applica sul 104). Sempre: CC 105 batteria in %, CC 106 stato. */
     puckIn(num, v, ts) {
       const p = this.puck;
       if (num === 102) p.hi = v;
@@ -129,6 +132,37 @@
         if (this.onPuck) this.onPuck({ rpm: (u - PUCK_ZERO) / PUCK_SCALE, ts });
       } else if (num === 105) { if (this.onPuck) this.onPuck({ bat: v, ts }); }
       else if (num === 106) { if (this.onPuck) this.onPuck({ flags: v, ts }); }
+    }
+
+    /* Puck, firmware 1.1: ogni 10 ms un pacchetto di 4 messaggi sul canale 13 (56 bit utili)
+         80 = orario del puck in decimi di ms (14 bit, riparte ogni 1,6384 s)
+         90 = angolo del disco, bit 0-13      (angolo in 1/524288 di giro, 21 bit: riparte ogni 4 giri)
+         A0 = angolo bit 14-20 | giri al minuto bit 0-6
+         E0 = giri al minuto bit 7-20         (giri al minuto × 4000 con segno, spostati di 2^20)
+       Con orario e angolo il brano segue la posizione del disco. */
+    puckFrame(type, d1, d2, ts) {
+      const p = this.puck;
+      if (type === 0x80) { p.traw = (d1 << 7) | d2; p.seq = 1; return; }
+      if (type === 0x90) { if (p.seq === 1) { p.alo = (d1 << 7) | d2; p.seq = 2; } else p.seq = 0; return; }
+      if (type === 0xA0) { if (p.seq === 2) { p.ahi = d1; p.rlo = d2; p.seq = 3; } else p.seq = 0; return; }
+      if (p.seq !== 3) return;
+      p.seq = 0;
+      const u = (d2 << 14) | (d1 << 7) | p.rlo;
+      const araw = (p.ahi << 14) | p.alo;
+      const m = { rpm: (u - PUCK_ZERO) / PUCK_SCALE, ts };
+      // orario e angolo senza salti: si sommano le differenze (dopo una pausa lunga si riparte da zero)
+      const reset = p.lt < 0 || ts - p.lastTs > 1000;
+      if (reset) { p.tu = 0; p.au = 0; }
+      else {
+        const dt = (p.traw - p.lt) & 0x3fff;
+        if (dt === 0) return;                                  // pacchetto ripetuto
+        let da = (araw - p.la) & 0x1fffff;
+        if (da >= 0x100000) da -= 0x200000;
+        p.tu += dt * 1e-4; p.au += da / 524288;
+      }
+      p.lt = p.traw; p.la = araw; p.lastTs = ts;
+      m.tp = p.tu; m.a = p.au; m.reset = reset;
+      if (this.onPuck) this.onPuck(m);
     }
 
     doLearn(ev) {
@@ -223,11 +257,18 @@
   }
 
   // codifica usata dal puck (serve anche ai test)
-  function puckBytes(rpm) {
+  // firmware 1.0 (solo giri al minuto) o, con tUnits (decimi di ms) e revs (giri), firmware 1.1
+  function puckBytes(rpm, tUnits, revs) {
     let v = Math.round(rpm * PUCK_SCALE);
     v = Math.max(-(PUCK_ZERO - 1), Math.min(PUCK_ZERO - 1, v));
-    const u = v + PUCK_ZERO, st = 0xB0 | PUCK_CH;
-    return [[st, 102, (u >> 14) & 0x7f], [st, 103, (u >> 7) & 0x7f], [st, 104, u & 0x7f]];
+    const u = v + PUCK_ZERO, c = PUCK_CH;
+    if (tUnits === undefined) {
+      const st = 0xB0 | c;
+      return [[st, 102, (u >> 14) & 0x7f], [st, 103, (u >> 7) & 0x7f], [st, 104, u & 0x7f]];
+    }
+    const t = Math.round(tUnits) & 0x3fff, a = Math.floor(revs * 524288) & 0x1fffff;
+    return [[0x80 | c, t >> 7, t & 0x7f], [0x90 | c, (a >> 7) & 0x7f, a & 0x7f],
+      [0xA0 | c, (a >> 14) & 0x7f, u & 0x7f], [0xE0 | c, (u >> 7) & 0x7f, (u >> 14) & 0x7f]];
   }
 
   root.SolcoMidi = { Midi, FUNCS, defaultMap, puckBytes };

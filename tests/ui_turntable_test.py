@@ -91,6 +91,23 @@ async def main():
         await page.wait_for_timeout(300)
         check('puck di nuovo vivo', not await page.evaluate('() => solco.TT.lost'))
 
+        # puck con programma 1.1: orario e angolo, il brano segue la posizione del disco
+        await page.evaluate('''() => {
+          clearInterval(window.__pk);
+          let t = 5000, a = 0.3, w = 1 / 1.8;
+          const send = () => { t += 100; a += w * 0.01; solcoMidiBatch(SolcoMidi.puckBytes(w * 60, t, a)); };
+          window.__pk = setInterval(send, 10);
+        }''')
+        await page.wait_for_timeout(800)
+        p0 = await page.evaluate('() => solco.engine.rep.p / solco.engine.sr')
+        await page.wait_for_timeout(2000)
+        p1 = await page.evaluate('() => solco.engine.rep.p / solco.engine.sr')
+        # il timer della pagina non è preciso: il brano segue l'angolo inviato, ~1 s per ogni 100 pacchetti
+        check('puck 1.1: il brano avanza col disco', 1.2 < p1 - p0 < 2.4, round(p1 - p0, 3))
+        check('puck 1.1: in riproduzione', await page.evaluate('() => solco.D.playing'))
+        await page.evaluate(PUCK, 100 / 3)
+        await page.wait_for_timeout(300)
+
         # impostazioni → Comandi: sezione giradischi
         await page.click('#btnSettings'); await page.wait_for_timeout(200)
         await page.locator('#setTabs button', has_text='COMANDI').click(); await page.wait_for_timeout(200)

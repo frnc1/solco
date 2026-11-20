@@ -139,8 +139,21 @@ class DeckDSP {
     this.scratchTau = 0.008;
     this.relFrom = 0; this.relLeft = 0; this.relTotal = Math.round(sr * 0.06);
     this.curRate = 0;
-    // giradischi (puck): la velocità arriva dal disco, come un DVS in modo relativo
+    // giradischi (puck): il disco comanda il brano, come un DVS in modo relativo.
+    // Puck con orario e angolo (firmware 1.1): il brano segue la POSIZIONE del disco.
+    // Puck vecchi (solo giri al minuto): il brano segue la velocità.
     this.vc = false; this.vcTarget = 0; this.vcCur = 0;
+    this.vcFilt = 0; this.vcPrevRaw = 0; this.vcScrUntil = 0;
+    this.vcSpr = 1.8;                         // secondi di brano per giro, alla velocità di riferimento
+    const VCN = 64;
+    this.vcTp = new Float64Array(VCN); this.vcA = new Float64Array(VCN); this.vcW = new Float64Array(VCN);
+    this.vcHead = 0; this.vcN = 0; this.vcLastArr = -1;
+    this.vcMins = new Float64Array(8); this.vcMinsN = 0; this.vcMinsI = 0;
+    this.vcChunkMin = 0; this.vcChunkStart = -1; this.vcOff = 0;
+    this.vcLateH = new Float32Array(100); this.vcLateN = 0;
+    this.vcDelay = 0.010; this.vcTau = 0.008; this.vcPct = 0.6; this.vcVS = 0;
+    this.vcAnchored = false; this.vcAncPos = 0; this.vcAncA = 0; this.vcSign = 1;
+    this._va = 0; this._vw = 0; this._vwl = 0; this.vcVT = 0;
     // loop
     this.loopIn = -1; this.loopOut = -1; this.loopOn = false;
     // slip
@@ -186,10 +199,17 @@ class DeckDSP {
       case 'grid': this.firstBeat = m.first; this.beatLen = m.len; break;
       case 'vc':
         this.vc = !!m.on;
-        if (this.vc) { this.vcCur = this.curRate; this.vcTarget = this.curRate; this.touch = false; this.bend = 0; this.nudgeAcc = 0; }
-        else { this.playing = false; }
+        if (this.vc) {
+          this.vcCur = this.curRate; this.vcTarget = this.curRate; this.vcFilt = this.curRate;
+          this.touch = false; this.bend = 0; this.nudgeAcc = 0; this.vcAnchored = false;
+        } else { this.playing = false; this.vcN = 0; }
         break;
-      case 'vcRate': this.vcTarget = +m.r || 0; break;
+      case 'vcRate': this.vcRate(+m.r || 0); break;
+      case 'vcPt': this.vcPoint(+m.tp, +m.a, +m.w || 0, !!m.reset); break;
+      case 'vcCfg':
+        if (m.spr > 0 && m.spr !== this.vcSpr) { this.vcSpr = +m.spr; this.vcAnchored = false; }
+        if (m.pct > 0 && m.pct < 1) this.vcPct = +m.pct;     // margine contro i ritardi: 0,6 pronta, 0,9 precisa
+        break;
       case 'touch':
         if (this.vc) break;               // col giradischi comanda il disco, non la jog a schermo
         if (m.on && !this.touch) { this.touch = true; this.scratchTarget = this.pos; }
@@ -283,6 +303,7 @@ class DeckDSP {
     if (!this.L) return;
     const old = this.pos;
     this.pos = clamp(to, 0, this.len);
+    this.vcAncPos += this.pos - old;          // giradischi: il disco resta dov'è, il brano salta
     this.startXfade(old, this.st.active ? 1 : this.curRate);
     if (this.st.active) this.st.reset(this.pos);
     if (this.touch || this.scrubLeft > 0) this.scratchTarget = this.pos;
@@ -313,6 +334,95 @@ class DeckDSP {
     this.nudgeAcc += d;
   }
 
+  /* ---------------- giradischi ---------------- */
+
+  // puck vecchi: solo velocità. Filtro: diretto su scratch e spinte, morbido a velocità costante.
+  vcRate(raw) {
+    const now = this.ct;
+    const accel = Math.abs(raw - this.vcPrevRaw);
+    this.vcPrevRaw = raw;
+    const diff = Math.abs(raw - this.vcFilt);
+    if (Math.abs(raw) < 0.003) {
+      this.vcFilt = 0; this.vcTarget = 0;
+    } else if (accel > 0.018 || diff > 0.035 || raw < 0) {
+      this.vcFilt = raw; this.vcTarget = raw; this.vcScrUntil = now + 0.25;
+    } else {
+      this.vcFilt += (diff > 0.003 ? 0.25 : 0.05) * (raw - this.vcFilt);
+      this.vcTarget = this.vcFilt;
+    }
+  }
+
+  // puck con orario e angolo: tp = orario del puck (s), a = angolo del disco (giri), w = giri al secondo
+  vcPoint(tp, a, w, reset) {
+    const arr = this.ct;
+    const N = this.vcTp.length;
+    if (reset) {
+      this.vcMinsN = 0; this.vcChunkStart = -1; this.vcLateH.fill(0); this.vcLateN = 0;
+    }
+    if (reset || this.vcN === 0 || arr - this.vcLastArr > 0.3) { this.vcN = 0; this.vcAnchored = false; }
+    if (this.vcN > 0 && tp <= this.vcTp[(this.vcHead + N - 1) % N]) return;   // doppione o fuori ordine
+    // orologio del puck -> orologio audio: il ritardo più piccolo degli ultimi ~4 s
+    const lat = arr - tp;
+    if (this.vcLateN > 0 && Math.abs(lat - this.vcOff) > 0.25) {   // orario del puck ripartito: si ricomincia
+      this.vcMinsN = 0; this.vcChunkStart = -1; this.vcLateH.fill(0); this.vcLateN = 0;
+      this.vcN = 0; this.vcAnchored = false;
+    }
+    if (this.vcChunkStart < 0 || arr - this.vcChunkStart >= 0.5) {
+      if (this.vcChunkStart >= 0) {
+        this.vcMins[this.vcMinsI] = this.vcChunkMin;
+        this.vcMinsI = (this.vcMinsI + 1) % this.vcMins.length;
+        this.vcMinsN = Math.min(this.vcMins.length, this.vcMinsN + 1);
+      }
+      this.vcChunkStart = arr; this.vcChunkMin = lat;
+    } else if (lat < this.vcChunkMin) this.vcChunkMin = lat;
+    let off = this.vcChunkMin;
+    for (let k = 0; k < this.vcMinsN; k++) if (this.vcMins[k] < off) off = this.vcMins[k];
+    // all'inizio si assesta in fretta, poi si muove piano (2 ms al secondo: non si sente)
+    const settle = this.vcLateN < 50;
+    if (this.vcN === 0 && this.vcLateN === 0) this.vcOff = off;
+    else this.vcOff += clamp(off - this.vcOff, settle ? -0.0003 : -0.00002, settle ? 0.0003 : 0.00002);
+    // ritardi oltre il minimo (mezzi millisecondi), con memoria di ~1,5 s
+    const late = Math.max(0, lat - this.vcOff);
+    const H = this.vcLateH;
+    H[Math.min(H.length - 1, Math.floor(late / 0.0005))] += 1;
+    if (++this.vcLateN % 25 === 0) for (let k = 0; k < H.length; k++) H[k] *= 0.85;
+    let tot = 0;
+    for (let k = 0; k < H.length; k++) tot += H[k];
+    let acc = 0, p90 = 0;
+    for (let k = 0; k < H.length; k++) { acc += H[k]; if (acc >= tot * this.vcPct) { p90 = (k + 1) * 0.0005; break; } }
+    const want = clamp(p90 + 0.0015, 0.003, 0.045);
+    // il margine si sposta solo quando serve davvero, e piano: ogni spostamento è un piccolo cambio di velocità
+    if (settle) this.vcDelay += (want - this.vcDelay) * 0.3;
+    else if (want > this.vcDelay + 0.001) this.vcDelay += Math.min(want - this.vcDelay, 0.00002);
+    else if (want < this.vcDelay - 0.003) this.vcDelay -= 0.000005;
+    // nuovo campione
+    const i = this.vcHead;
+    this.vcTp[i] = tp; this.vcA[i] = a; this.vcW[i] = w;
+    this.vcHead = (i + 1) % N; this.vcN = Math.min(N, this.vcN + 1);
+    this.vcLastArr = arr;
+  }
+
+  // angolo e velocità del disco all'orario tq del puck (Hermite tra due campioni, oltre l'ultimo prosegue dritto)
+  vcEval(tq) {
+    const N = this.vcTp.length, n = this.vcN, h0 = this.vcHead;
+    const T = this.vcTp, A = this.vcA, W = this.vcW;
+    let i1 = (h0 + N - 1) % N;
+    if (tq >= T[i1]) { this._va = A[i1] + W[i1] * (tq - T[i1]); this._vw = W[i1]; this._vwl = W[i1]; return; }
+    for (let k = 1; k < n; k++) {
+      const i0 = (h0 + N - 1 - k) % N;
+      if (tq >= T[i0]) {
+        const h = T[i1] - T[i0], s = (tq - T[i0]) / h, s2 = s * s, s3 = s2 * s;
+        const p0 = A[i0], p1 = A[i1], m0 = W[i0] * h, m1 = W[i1] * h;
+        this._va = (2 * s3 - 3 * s2 + 1) * p0 + (s3 - 2 * s2 + s) * m0 + (-2 * s3 + 3 * s2) * p1 + (s3 - s2) * m1;
+        this._vw = ((6 * s2 - 6 * s) * p0 + (3 * s2 - 4 * s + 1) * m0 + (-6 * s2 + 6 * s) * p1 + (3 * s2 - 2 * s) * m1) / h;
+        this._vwl = W[i0] + (W[i1] - W[i0]) * s;     // velocità misurata dal puck, interpolata
+        return;
+      }
+      i1 = i0;
+    }
+    this._va = A[i1]; this._vw = 0; this._vwl = 0;
+  }
+
   startXfade(oldPos, oldRate) {
     this.xfPos = oldPos;
     this.xfRate = oldRate;
@@ -325,6 +435,7 @@ class DeckDSP {
     let p = this.loopIn + fmod(this.pos - this.loopOut, ll);
     if (p >= this.loopOut) p = this.loopIn;
     this.pos = p;
+    this.vcAncPos += p - old;
     this.startXfade(old, this.st.active ? 1 : this.curRate);
     if (this.st.active) this.st.reset(this.pos);
   }
@@ -371,24 +482,44 @@ class DeckDSP {
       if (target === 0 && Math.abs(this.bend) < 1e-4) this.bend = 0;
     }
 
-    if (this.vc) {
-      // velocità del disco, ammorbidita appena (i dati arrivano a pacchetti dal Bluetooth)
-      this.vcCur += (this.vcTarget - this.vcCur) * (1 - Math.exp(-blockSec / 0.01));
-      this.playing = Math.abs(this.vcCur) > 0.02;
+    const vcPos = this.vc && this.vcN > 0;
+    if (vcPos) {
+      // posizione del disco qualche millesimo fa (margine contro i ritardi del Bluetooth)
+      this.vcEval(this.ct - this.vcOff - this.vcDelay);
+      const sgn = this.reverse ? -1 : 1;
+      const vRaw = this._vw * this.vcSpr * sgn;          // dalla traiettoria (segue ogni dettaglio)
+      const vM = this._vwl * this.vcSpr * sgn;           // misurata dal puck (più liscia)
+      // scratch, presa del disco, spinte forti: velocità lontana dalla normale o che cambia in fretta
+      if (Math.abs(vM - 1) > 0.15 || Math.abs(vM - this.vcVT) > 0.03) this.vcScrUntil = this.ct + 0.25;
+      // a velocità costante si usa la velocità misurata dal puck (più liscia della traiettoria), ammorbidita;
+      // un cambio vero (spinta, pitch) si segue in 5 ms
+      if (this.ct < this.vcScrUntil) this.vcVS = vRaw;
+      else this.vcVS += (vM - this.vcVS) * (1 - Math.exp(-blockSec / (Math.abs(vM - this.vcVS) > 0.003 ? 0.005 : 0.03)));
+      this.vcVT = this.vcVS;
+      this.vcCur = this.vcVT;
+      this.bend = 0; this.relLeft = 0; this.motor = 1;
+    } else if (this.vc) {
+      // puck vecchi: velocità del disco, quasi diretta durante lo scratch
+      const tau = this.ct < this.vcScrUntil ? 0.002 : 0.012;
+      this.vcCur += (this.vcTarget - this.vcCur) * (1 - Math.exp(-blockSec / tau));
+      if (this.vcTarget === 0 && Math.abs(this.vcCur) < 0.003) this.vcCur = 0;
+      this.playing = Math.abs(this.vcCur) > 0.005;
       this.bend = 0; this.relLeft = 0; this.motor = 1;
     }
     const scratching = this.touch || this.scrubLeft > 0;
+    if (this.vc && scratching) this.vcAnchored = false;   // jog a schermo a disco fermo: poi si riaggancia
     if (this.scrubLeft > 0) this.scrubLeft -= n;
 
     // slip: la posizione "ombra" continua ad avanzare mentre fai scratch, reverse o loop
     const exc = this.slip && (scratching || this.reverse || this.loopOn);
     if (exc && !this.inExc) { this.inExc = true; this.slipPos = this.pos; }
     if (this.inExc) {
-      if (this.playing) this.slipPos += this.tempo * n;
+      if (this.playing) this.slipPos += (this.vc ? Math.abs(this.vcCur) : this.tempo) * n;
       if (!exc) {
         this.inExc = false;
         const old = this.pos;
         this.pos = clamp(this.slipPos, 0, this.len);
+        this.vcAncPos += this.pos - old;
         this.startXfade(old, st.active ? 1 : this.curRate);
         if (st.active) st.reset(this.pos);
       }
@@ -400,6 +531,23 @@ class DeckDSP {
       const err = this.scratchTarget - this.pos;
       r1 = clamp(err / Math.max(n, this.scratchTau * sr), -14, 14);
       this.motor = this.playing ? 1 : 0;
+    } else if (vcPos) {
+      // il brano insegue la posizione del disco: velocità del disco + correzione dell'errore
+      const sign = this.reverse ? -1 : 1;
+      if (!this.vcAnchored || sign !== this.vcSign) {
+        this.vcAncPos = this.pos; this.vcAncA = this._va; this.vcAnchored = true; this.vcSign = sign;
+      }
+      const spr = this.vcSpr * sr;
+      let tgt = this.vcAncPos + sign * (this._va - this.vcAncA) * spr;
+      if (tgt < 0) { this.vcAncPos -= tgt; tgt = 0; } else if (tgt > this.len) { this.vcAncPos -= tgt - this.len; tgt = this.len; }
+      const vT = this.vcVT;
+      const e = tgt - (this.pos + 0.5 * n * (r0 + vT));
+      if (Math.abs(e) > 0.004 * sr) this.vcScrUntil = this.ct + 0.25;
+      // durante lo scratch l'errore si recupera in 8 ms; a velocità costante in 0,2 s (niente tremolio)
+      const tau = this.ct < this.vcScrUntil ? this.vcTau : 0.2;
+      r1 = clamp(vT + e / Math.max(n, tau * sr), -16, 16);
+      if (Math.abs(r1) < 1e-4 && Math.abs(vT) < 1e-4) r1 = 0;
+      this.playing = Math.abs(vT) > 0.02 || Math.abs(r1) > 0.05;
     } else if (this.vc) {
       r1 = base;
     } else {
@@ -418,8 +566,10 @@ class DeckDSP {
       }
     }
 
+    // key lock: col giradischi solo vicino alla velocità normale e non durante scratch e spinte forti
     const useStretch = this.keyLock && !scratching && this.relLeft === 0 && this.motor >= 1 &&
-      !this.reverse && this.playing && Math.abs(base - 1) > 2e-4 && (!this.vc || Math.abs(base - 1) < 0.2);
+      !this.reverse && this.playing && Math.abs(base - 1) > 2e-4 &&
+      (!this.vc || (this.ct >= this.vcScrUntil && Math.abs(base - 1) < 0.15));
 
     if (useStretch && !st.active) st.reset(this.pos);
     else if (!useStretch && st.active) { this.startXfade(st.srcPos(), 1); st.active = false; }
