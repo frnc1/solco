@@ -40,11 +40,12 @@ jobs:
         with:
           gradle-version: '8.14.3'
 
-      - name: Test del motore audio e dell'analisi
+      - name: Test del motore audio, dell'analisi e del protocollo del puck
         run: |
           node tests/engine.test.js
           node tests/analysis.test.js
           python3 tests/firmware_test.py
+          node tests/puck_proto.test.js
 
       - name: Copia l'app negli asset dell'APK
         run: |
@@ -122,26 +123,43 @@ jobs:
           git clone -q --depth 1 -b 0.3.0 https://github.com/m5stack/M5Unified
           git clone -q --depth 1 -b 0.3.0 https://github.com/m5stack/M5GFX
           pip install -q esptool
-      - name: Compila il firmware del puck (M5StickS3)
+      - name: Compila il firmware dei puck (M5StickS3 e M5Stack StopWatch)
         run: |
+          # immagine unica da scrivere all'indirizzo 0x0, senza il riempimento fino alla fine della flash
+          immagine() {
+            local d=$1 n=$2 out=$3
+            if [ -f "$d/$n.ino.merged.bin" ]; then
+              head -c $((0x10000 + $(stat -c%s "$d/$n.ino.bin"))) "$d/$n.ino.merged.bin" > "$out"
+            else
+              B0=$(ls ~/.arduino15/packages/esp32/hardware/esp32/*/tools/partitions/boot_app0.bin | head -1)
+              python3 -m esptool --chip esp32s3 merge_bin -o "$out" 0x0 "$d/$n.ino.bootloader.bin" 0x8000 "$d/$n.ino.partitions.bin" \
+                0xe000 "$B0" 0x10000 "$d/$n.ino.bin"
+            fi
+            # controllo: bootloader a 0x0 e programma a 0x10000 (immagini ESP, primo byte 0xE9)
+            python3 -c "import sys; b=open(sys.argv[1],'rb').read(); assert b[0]==0xE9 and b[0x10000]==0xE9, 'immagine sbagliata'; print(sys.argv[1], len(b), 'byte')" "$out"
+          }
           arduino-cli compile --warnings default \
             --fqbn esp32:esp32:esp32s3:CDCOnBoot=cdc,FlashSize=8M,PartitionScheme=default_8MB,PSRAM=disabled \
             --output-dir build firmware/puck/solco_puck
-          ls -la build
-          if [ ! -f build/solco_puck.ino.merged.bin ]; then
-            B0=$(ls ~/.arduino15/packages/esp32/hardware/esp32/*/tools/partitions/boot_app0.bin | head -1)
-            python3 -m esptool --chip esp32s3 merge_bin -o build/solco_puck.ino.merged.bin \
-              0x0 build/solco_puck.ino.bootloader.bin 0x8000 build/solco_puck.ino.partitions.bin \
-              0xe000 "$B0" 0x10000 build/solco_puck.ino.bin
-          fi
-          cp build/solco_puck.ino.merged.bin solco-puck.bin
+          immagine build solco_puck solco-puck.bin
+          arduino-cli compile --warnings default \
+            --fqbn esp32:esp32:esp32s3:CDCOnBoot=cdc,FlashSize=16M,PartitionScheme=app3M_fat9M_16MB,PSRAM=opi \
+            --output-dir build_sw firmware/puck/solco_puck_sw
+          immagine build_sw solco_puck_sw solco-puck-stopwatch.bin
           cp hardware/stampa/porta_puck.stl porta-puck.stl
+          cp hardware/stampa/porta_stopwatch.stl porta-stopwatch.stl
       - uses: actions/upload-artifact@v4
         with:
           name: solco-puck
           path: |
             solco-puck.bin
             porta-puck.stl
+            solco-puck-stopwatch.bin
+            porta-stopwatch.stl
+      - name: Prova delle schermate del puck con schermo (simulazione sul computer)
+        run: |
+          bash tests/build_puck_sim.sh "$HOME/Arduino/libraries/M5GFX"
+          mkdir -p /tmp/puckshots && /tmp/puck_ui_sim /tmp/puckshots
   release:
     needs: [build, windows, puck]
     if: always() && needs.build.result == 'success'
@@ -162,10 +180,13 @@ jobs:
 
             **Windows (Galaxy Book)**: scarica **SOLCO-Setup.exe** e aprilo. Se compare «Windows ha protetto il PC», tocca «Ulteriori informazioni» e poi «Esegui comunque».
             **Puck del giradischi (M5StickS3)**: **solco-puck.bin** è il programma da caricare sul puck, **porta-puck.stl** il supporto da stampare. Istruzioni nel README, sezione «Giradischi come controller».
+            **Puck con schermo (M5Stack StopWatch)**: **solco-puck-stopwatch.bin** è il programma, **porta-stopwatch.stl** il supporto da stampare. Istruzioni nel README, sezione «Puck con schermo».
           files: |
             art/solco.apk
             art/SOLCO-Setup.exe
             art/solco-puck.bin
             art/porta-puck.stl
+            art/solco-puck-stopwatch.bin
+            art/porta-stopwatch.stl
           fail_on_unmatched_files: false
           make_latest: true

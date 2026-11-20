@@ -13,3 +13,4 @@ tests/media/*.mp3
 tests/media/*.jpg
 __pycache__/
 *.pyc
+firmware/puck/*/build/

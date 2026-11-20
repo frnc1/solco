@@ -56,6 +56,9 @@
       this.ticksPerRev = 2048;
       this.onDevices = null;
       this.onPuck = null;                // puck del giradischi (firmware in /firmware/puck)
+      this.onPuckMsg = null;             // puck con schermo: messaggi SysEx decodificati
+      this.onPuckOut = null;
+      this.sysexOk = false;
       this.puck = { hi: -1, mid: -1, seq: 0, traw: 0, alo: 0, ahi: 0, rlo: 0, lt: -1, la: 0, tu: 0, au: 0, lastTs: -1e9 };
       // ponte per l'app Android: il codice nativo chiama queste funzioni
       root.solcoMidiIn = (bytes, ts) => this.handle(bytes, ts || performance.now());
@@ -76,9 +79,13 @@
 
     async init() {
       if (!navigator.requestMIDIAccess) return false;
+      // SysEx serve al puck con schermo; se il browser lo nega si va avanti senza
       try {
-        this.access = await navigator.requestMIDIAccess({ sysex: false });
-      } catch (e) { return false; }
+        this.access = await navigator.requestMIDIAccess({ sysex: true });
+        this.sysexOk = true;
+      } catch (e) {
+        try { this.access = await navigator.requestMIDIAccess({ sysex: false }); } catch (e2) { return false; }
+      }
       const attach = () => {
         this.access.inputs.forEach((inp) => { inp.onmidimessage = (ev) => this.handle(ev.data, ev.timeStamp); });
         this.updateDevices();
@@ -99,8 +106,31 @@
     cancelLearn() { this.clearPend(); this.learnFn = null; this.learnCb = null; }
     clearPend() { if (this.learnTimer) clearTimeout(this.learnTimer); this.learnTimer = null; this.learnPend = null; }
 
+    // messaggi per il puck con schermo: app Android (ponte nativo) o Web MIDI (Windows, browser)
+    puckSend(bytes) {
+      const A = root.SolcoAndroid;
+      if (A && A.puckSend) {
+        let hex = '';
+        for (let i = 0; i < bytes.length; i++) hex += (bytes[i] < 16 ? '0' : '') + bytes[i].toString(16);
+        try { A.puckSend(hex); return true; } catch (e) { return false; }
+      }
+      let sent = false;
+      if (this.access && this.sysexOk) {
+        this.access.outputs.forEach((o) => {
+          if (o.state !== 'disconnected' && /^SOLCO Puck/i.test(o.name || '')) { try { o.send(bytes); sent = true; } catch (e) { /* niente */ } }
+        });
+      }
+      if (this.onPuckOut) this.onPuckOut(bytes);       // usato dai test
+      return sent;
+    }
+
     handle(data, ts) {
       if (!data || data.length < 2) return;
+      if (data[0] === 0xF0) {
+        const m = pkDecode(data);
+        if (m && this.onPuckMsg) this.onPuckMsg(m);
+        return;
+      }
       const s = data[0], type = s & 0xf0, ch = s & 0x0f;
       // puck del giradischi: canale 13, CC 102-106 (non passano dal monitor né dalla mappatura)
       if (ch === PUCK_CH) {
@@ -256,6 +286,127 @@
     }
   }
 
+  /* ---------------- Puck con schermo (M5Stack StopWatch): messaggi SysEx ----------------
+     F0 7D 53 4C <comando> <dati a 7 bit> F7   (7D = uso non commerciale, 53 4C = "SL")
+     Numeri: u7 = 1 byte, u14 = 2 byte, u21 = 3 byte (dal più alto), s21 = u21 di (v + 2^20).
+     Testi: lunghezza u7 + caratteri ASCII stampabili (SOLCO toglie accenti e simboli).
+     Dal tablet al puck: STATE, TRACK, WAVE, LHEAD, LITEMS, GENRES, RESULT, HELLOK.
+     Dal puck al tablet: HELLO, LREQ, LOAD, BROWSE, GREQ, TREQ.  Dettagli in firmware/puck/README.md */
+  const PK = {
+    STATE: 0x01, TRACK: 0x02, WAVE: 0x03, LHEAD: 0x04, LITEMS: 0x05, GENRES: 0x06, RESULT: 0x07, HELLOK: 0x08,
+    HELLO: 0x10, LREQ: 0x11, LOAD: 0x12, BROWSE: 0x13, GREQ: 0x14, TREQ: 0x15,
+  };
+  const PK_HEAD = [0xF0, 0x7D, 0x53, 0x4C];
+  const PK_NONE = 0x3FFF;           // indice «nessuno» / «intorno al brano caricato»
+
+  const FOLD = {
+    'ß': 'ss', 'æ': 'ae', 'Æ': 'AE', 'ø': 'o', 'Ø': 'O', 'œ': 'oe', 'Œ': 'OE', 'ł': 'l', 'Ł': 'L', 'đ': 'd', 'Đ': 'D',
+    'þ': 'th', 'Þ': 'TH', 'ð': 'd', 'ı': 'i', '‘': "'", '’': "'", '‚': "'", '´': "'", '`': "'", '“': '"', '”': '"', '„': '"',
+    '«': '"', '»': '"', '–': '-', '—': '-', '‐': '-', '…': '...', '•': '*', '·': '-', '×': 'x', '€': 'EUR', '£': 'L', '°': 'o',
+    ' ': ' ',
+  };
+  // testo per il puck: solo ASCII stampabile (i caratteri del puck non hanno accenti)
+  function asciiFold(s, max) {
+    s = String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '');
+    let out = '', bad = false;
+    for (const ch of s) {
+      const c = ch.codePointAt(0);
+      let r = null;
+      if (c >= 0x20 && c <= 0x7e) r = ch;
+      else if (FOLD[ch] !== undefined) r = FOLD[ch];
+      else if (c === 9 || c === 10 || c === 13) r = ' ';
+      if (r === null) { if (!bad) out += '?'; bad = true; } else { out += r; bad = false; }
+    }
+    out = out.replace(/\s+/g, ' ').trim();
+    if (max && out.length > max) out = out.slice(0, max).trimEnd();
+    return out;
+  }
+  // Camelot «8A» ↔ codice 1..24 (1A=1, 1B=2 … 12B=24), 0 = sconosciuto
+  function camCode(c) {
+    const m = /^(\d{1,2})([AB])$/i.exec(String(c || '').trim());
+    if (!m) return 0;
+    const n = parseInt(m[1], 10);
+    if (n < 1 || n > 12) return 0;
+    return n * 2 - (m[2].toUpperCase() === 'A' ? 1 : 0);
+  }
+  const camName = (k) => (k >= 1 && k <= 24 ? Math.ceil(k / 2) + (k % 2 ? 'A' : 'B') : '');
+
+  class PkW {
+    constructor(cmd) { this.b = PK_HEAD.concat([cmd & 0x7f]); }
+    u7(v) { this.b.push(Math.max(0, Math.min(127, v | 0))); return this; }
+    u14(v) { v = Math.max(0, Math.min(0x3fff, Math.round(v) || 0)); this.b.push((v >> 7) & 0x7f, v & 0x7f); return this; }
+    u21(v) { v = Math.max(0, Math.min(0x1fffff, Math.round(v) || 0)); this.b.push((v >> 14) & 0x7f, (v >> 7) & 0x7f, v & 0x7f); return this; }
+    s21(v) { v = Math.max(-0xfffff, Math.min(0xfffff, Math.round(v) || 0)); return this.u21(v + 0x100000); }
+    str(s, max) {
+      const t = asciiFold(s, Math.min(127, max || 127));
+      this.b.push(t.length);
+      for (let i = 0; i < t.length; i++) this.b.push(t.charCodeAt(i) & 0x7f);
+      return this;
+    }
+    end() { this.b.push(0xF7); return this.b; }
+  }
+  class PkR {
+    constructor(b) { this.b = b; this.i = 5; this.end = b.length - 1; this.ok = true; }
+    byte() { if (this.i >= this.end) { this.ok = false; return 0; } return this.b[this.i++] & 0x7f; }
+    u7() { return this.byte(); }
+    u14() { const h = this.byte(); return (h << 7) | this.byte(); }
+    u21() { const a = this.byte(), b = this.byte(); return (a << 14) | (b << 7) | this.byte(); }
+    s21() { return this.u21() - 0x100000; }
+    str() { const n = this.byte(); let s = ''; for (let k = 0; k < n; k++) s += String.fromCharCode(this.byte()); return s; }
+  }
+  // codifica (oggetto → byte) per ogni messaggio
+  const pkEnc = {
+    state: (o) => new PkW(PK.STATE).u7(o.flags).u21(o.pos).u21(o.dur).u21(o.bpm).s21(o.pitch).u7(o.tseq).u7(o.deck).end(),
+    track: (o) => new PkW(PK.TRACK).u7(o.tseq).u21(o.bpm).u7(o.cam).u21(o.dur).str(o.title, 48).str(o.artist, 40).str(o.genre, 24).end(),
+    wave: (o) => { const w = new PkW(PK.WAVE).u7(o.tseq).u7(o.bins.length); o.bins.forEach((v) => w.u7(v)); return w.end(); },
+    lhead: (o) => new PkW(PK.LHEAD).u7(o.req).u14(o.total).u14(o.sel).u7(o.sort).u7(o.compat).str(o.genre, 24).end(),
+    litems: (o) => {
+      const w = new PkW(PK.LITEMS).u7(o.req).u14(o.start).u7(o.items.length);
+      o.items.forEach((t) => w.u14(t.bpm).u7(t.cam).u14(t.dur).u7(t.fl).str(t.id, 15).str(t.title, 48).str(t.artist, 32));
+      return w.end();
+    },
+    genres: (o) => { const w = new PkW(PK.GENRES).u7(o.list.length); o.list.forEach((g) => w.u14(g.n).str(g.name, 24)); return w.end(); },
+    result: (o) => new PkW(PK.RESULT).u7(o.code).str(o.text, 64).end(),
+    hellok: (o) => new PkW(PK.HELLOK).u7(o.deck).str(o.version, 16).end(),
+    hello: (o) => new PkW(PK.HELLO).u7(o.proto).u7(o.model).str(o.fw, 16).end(),
+    lreq: (o) => new PkW(PK.LREQ).u7(o.req).u7(o.sort).u7(o.compat).u14(o.start).u7(o.count).str(o.genre, 24).end(),
+    load: (o) => new PkW(PK.LOAD).u7(o.force ? 1 : 0).str(o.id, 15).end(),
+    browse: (o) => new PkW(PK.BROWSE).u7(o.on ? 1 : 0).end(),
+    greq: () => new PkW(PK.GREQ).end(),
+    treq: () => new PkW(PK.TREQ).end(),
+  };
+  // decodifica (byte → oggetto con .cmd), null se non è un messaggio del puck o è troncato
+  function pkDecode(b) {
+    if (!b || b.length < 6 || b[0] !== 0xF0 || b[b.length - 1] !== 0xF7) return null;
+    for (let i = 1; i < 4; i++) if (b[i] !== PK_HEAD[i]) return null;
+    const r = new PkR(b), cmd = b[4];
+    let m = null;
+    switch (cmd) {
+      case PK.STATE: m = { flags: r.u7(), pos: r.u21(), dur: r.u21(), bpm: r.u21(), pitch: r.s21(), tseq: r.u7(), deck: r.u7() }; break;
+      case PK.TRACK: m = { tseq: r.u7(), bpm: r.u21(), cam: r.u7(), dur: r.u21(), title: r.str(), artist: r.str(), genre: r.str() }; break;
+      case PK.WAVE: { const tseq = r.u7(), n = r.u7(), bins = []; for (let k = 0; k < n; k++) bins.push(r.u7()); m = { tseq, bins }; break; }
+      case PK.LHEAD: m = { req: r.u7(), total: r.u14(), sel: r.u14(), sort: r.u7(), compat: r.u7(), genre: r.str() }; break;
+      case PK.LITEMS: {
+        const req = r.u7(), start = r.u14(), n = r.u7(), items = [];
+        for (let k = 0; k < n; k++) items.push({ bpm: r.u14(), cam: r.u7(), dur: r.u14(), fl: r.u7(), id: r.str(), title: r.str(), artist: r.str() });
+        m = { req, start, items }; break;
+      }
+      case PK.GENRES: { const n = r.u7(), list = []; for (let k = 0; k < n; k++) list.push({ n: r.u14(), name: r.str() }); m = { list }; break; }
+      case PK.RESULT: m = { code: r.u7(), text: r.str() }; break;
+      case PK.HELLOK: m = { deck: r.u7(), version: r.str() }; break;
+      case PK.HELLO: m = { proto: r.u7(), model: r.u7(), fw: r.str() }; break;
+      case PK.LREQ: m = { req: r.u7(), sort: r.u7(), compat: r.u7(), start: r.u14(), count: r.u7(), genre: r.str() }; break;
+      case PK.LOAD: m = { force: r.u7(), id: r.str() }; break;
+      case PK.BROWSE: m = { on: r.u7() }; break;
+      case PK.GREQ: case PK.TREQ: m = {}; break;
+      default: return null;
+    }
+    if (!r.ok) return null;
+    m.cmd = cmd;
+    return m;
+  }
+  const PuckProto = { PK, PK_NONE, asciiFold, camCode, camName, enc: pkEnc, decode: pkDecode };
+
   // codifica usata dal puck (serve anche ai test)
   // firmware 1.0 (solo giri al minuto) o, con tUnits (decimi di ms) e revs (giri), firmware 1.1
   function puckBytes(rpm, tUnits, revs) {
@@ -271,5 +422,5 @@
       [0xA0 | c, (a >> 14) & 0x7f, u & 0x7f], [0xE0 | c, (u >> 7) & 0x7f, (u >> 14) & 0x7f]];
   }
 
-  root.SolcoMidi = { Midi, FUNCS, defaultMap, puckBytes };
+  root.SolcoMidi = { Midi, FUNCS, defaultMap, puckBytes, PuckProto };
 })(typeof self !== 'undefined' ? self : this);

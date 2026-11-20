@@ -16,6 +16,7 @@ import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.media.midi.MidiDevice;
 import android.media.midi.MidiDeviceInfo;
+import android.media.midi.MidiInputPort;
 import android.media.midi.MidiManager;
 import android.media.midi.MidiOutputPort;
 import android.media.midi.MidiReceiver;
@@ -75,6 +76,8 @@ public class MainActivity extends Activity {
     private final Map<Integer, MidiDevice> openDevices = new HashMap<>();
     private final Map<Integer, String> deviceNames = new LinkedHashMap<>();
     private final List<MidiOutputPort> openPorts = new ArrayList<>();
+    // puck con schermo: porte per mandargli lo stato del deck e la lista dei brani
+    private final Map<Integer, MidiInputPort> puckIns = new HashMap<>();
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final StringBuilder midiBuf = new StringBuilder();
     private boolean flushPosted = false;
@@ -307,6 +310,10 @@ public class MainActivity extends Activity {
         for (MidiOutputPort p : openPorts) {
             try { p.close(); } catch (IOException ignored) { }
         }
+        synchronized (puckIns) {
+            for (MidiInputPort p : puckIns.values()) { try { p.close(); } catch (IOException ignored) { } }
+            puckIns.clear();
+        }
         for (MidiDevice d : openDevices.values()) {
             try { d.close(); } catch (IOException ignored) { }
         }
@@ -350,7 +357,10 @@ public class MainActivity extends Activity {
     }
 
     /* collega le uscite del dispositivo al ricevitore che passa i messaggi alla pagina */
-    private void attach(MidiDeviceInfo info, MidiDevice device) {
+    private void attach(MidiDeviceInfo info, MidiDevice device) { attach(info, device, false); }
+
+    /* puck = collegato da «CERCA PUCK»: anche se Android non ne conosce il nome gli si possono mandare messaggi */
+    private void attach(MidiDeviceInfo info, MidiDevice device, boolean puck) {
         openDevices.put(info.getId(), device);
         Bundle p = info.getProperties();
         String name = p.getString(MidiDeviceInfo.PROPERTY_NAME);
@@ -365,10 +375,18 @@ public class MainActivity extends Activity {
                 openPorts.add(port);
             }
         }
+        if ((puck || (name != null && name.startsWith("SOLCO Puck"))) && info.getInputPortCount() > 0) {
+            MidiInputPort in = device.openInputPort(0);
+            if (in != null) synchronized (puckIns) { puckIns.put(info.getId(), in); }
+        }
         sendDevices();
     }
 
     private void closeDevice(int id) {
+        synchronized (puckIns) {
+            MidiInputPort in = puckIns.remove(id);
+            if (in != null) { try { in.close(); } catch (IOException ignored) { } }
+        }
         MidiDevice d = openDevices.remove(id);
         if (d != null) {
             try { d.close(); } catch (IOException ignored) { }
@@ -514,7 +532,7 @@ public class MainActivity extends Activity {
                     if (device == null) { jsBle("fail", name); return; }
                     bleDevices.put(addr, device);
                     MidiDeviceInfo info = device.getInfo();
-                    if (!openDevices.containsKey(info.getId()) && !opening.contains(info.getId())) attach(info, device);
+                    if (!openDevices.containsKey(info.getId()) && !opening.contains(info.getId())) attach(info, device, true);
                     jsBle("connected", name);
                 }
             }, ui);
@@ -577,15 +595,25 @@ public class MainActivity extends Activity {
         private final int[] msg = new int[3];
         private int running = 0, have = 0, need = 0;
         private boolean sysex = false;
+        // SysEx (puck con schermo): si passano interi alla pagina, da F0 a F7
+        private final StringBuilder sx = new StringBuilder();
+        private int sxLen = 0;
 
         @Override
         public void onSend(byte[] data, int offset, int count, long timestamp) {
             for (int i = offset; i < offset + count; i++) {
                 int b = data[i] & 0xFF;
                 if (b >= 0xF8) continue;                 // clock e messaggi in tempo reale
-                if (b == 0xF0) { sysex = true; continue; }
-                if (b == 0xF7) { sysex = false; continue; }
-                if (sysex) continue;
+                if (b == 0xF0) { sysex = true; sx.setLength(0); sx.append("240"); sxLen = 1; continue; }
+                if (b == 0xF7) {
+                    if (sysex && sxLen < 4096) { sx.append(",247"); emitSysex(); }
+                    sysex = false;
+                    continue;
+                }
+                if (sysex) {
+                    if (b < 0x80) { if (sxLen < 4096) { sx.append(',').append(b); sxLen++; } continue; }
+                    sysex = false;                       // un altro stato chiude il SysEx incompleto
+                }
                 if (b >= 0x80) {
                     running = b < 0xF0 ? b : 0;
                     have = 0;
@@ -613,6 +641,16 @@ public class MainActivity extends Activity {
                 return 1;
             }
             return 3;
+        }
+
+        private void emitSysex() {
+            synchronized (midiBuf) {
+                midiBuf.append('[').append(sx).append("],");
+                if (!flushPosted) {
+                    flushPosted = true;
+                    ui.post(flushMidi);
+                }
+            }
         }
 
         private void emit(int n) {
@@ -657,6 +695,21 @@ public class MainActivity extends Activity {
         public void bleConnect(final String addr, final String name) {
             if (addr == null || !BluetoothAdapter.checkBluetoothAddress(addr)) return;
             ui.post(() -> bleChoose(addr, name));
+        }
+
+        /* messaggi al puck con schermo (SysEx in esadecimale) */
+        @JavascriptInterface
+        public void puckSend(String hex) {
+            if (hex == null || hex.length() < 4 || (hex.length() & 1) != 0) return;
+            byte[] b = new byte[hex.length() / 2];
+            try {
+                for (int i = 0; i < b.length; i++) b[i] = (byte) Integer.parseInt(hex.substring(i * 2, i * 2 + 2), 16);
+            } catch (NumberFormatException e) { return; }
+            synchronized (puckIns) {
+                for (MidiInputPort p : puckIns.values()) {
+                    try { p.send(b, 0, b.length); } catch (IOException ignored) { }
+                }
+            }
         }
 
         @JavascriptInterface

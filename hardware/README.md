@@ -138,3 +138,7 @@ Le scritte piccole **sopra** i tasti sono le funzioni con SHIFT. I led del fader
 
 `stampa/porta_puck.stl` (sorgente `cad/porta_puck.py`): disco Ø 90 mm da incollare sull'etichetta del disco di controllo, con la sede per un M5StickS3. Foro centrale Ø 9 mm sul perno da 7,24 mm, così gira col disco e non col piatto. Si stampa così com'è, base sul piatto, senza supporti. Se lo stick balla nella sede, un giro di nastro sul fondo.
 
+`stampa/porta_stopwatch.3mf` / `.stl` (sorgente `cad/porta_stopwatch.py`): supporto per **M5Stack StopWatch**, con lo schermo esattamente sopra il perno. Base Ø 90 mm da fissare con biadesivo sull'etichetta, foro Ø 9,2 mm (gira col disco), spazio per il perno fino a 20 mm sopra il disco. Lo StopWatch si incastra in una sede conica disegnata sul modello 3D ufficiale M5Stack: si centra da solo e non gira nella sede; i tasti restano sopra il bordo e l'apertura davanti all'USB-C permette di ricaricarlo senza toglierlo. Si stampa base sul piatto, senza supporti.
+
+![Porta-puck StopWatch](anteprime/porta_stopwatch_montato.png)
+

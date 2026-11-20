@@ -49,7 +49,7 @@ La stessa app gira anche su Windows, in una finestra a schermo intero: comoda su
 
 ## Giradischi come controller (puck Bluetooth)
 
-Un **M5StickS3** sopra il disco misura quanto gira il disco e lo manda al tablet via Bluetooth MIDI: il brano segue il disco. Il pitch del giradischi regola il tempo; se fermi il disco il brano si ferma; lo scratch è vero scratch. Niente puntina, niente dischi timecode, nessun cavo verso il tablet. **Non ancora provato con l'hardware vero.**
+Un **M5StickS3** sopra il disco misura quanto gira il disco e lo manda al tablet via Bluetooth MIDI: il brano segue il disco. Il pitch del giradischi regola il tempo; se fermi il disco il brano si ferma; lo scratch è vero scratch. Niente puntina, niente dischi timecode, nessun cavo verso il tablet. **Non ancora provato con l'hardware vero.** Con lo schermo per BPM, tempo e lista dei brani: vedi «Puck con schermo» più sotto.
 
 **Serve, per ogni giradischi:** 1 M5StickS3 (M5Stack K150), il porta-puck stampato (`hardware/stampa/porta_puck.stl`, PLA, senza supporti), biadesivo forte, un disco vecchio qualsiasi (resta sempre quello: è il disco di controllo).
 
@@ -63,6 +63,28 @@ In SOLCO con il puck collegato: PLAY non serve (comanda il disco), CUE riporta a
 
 **Scratch (programma del puck 1.1).** Il puck manda anche l'angolo del disco e il proprio orario: il brano segue la **posizione** del disco, non solo la velocità, quindi il punto dello scratch resta sotto l'adesivo anche dopo cento avanti e indietro. *Impostazioni → Comandi → Risposta allo scratch*: **PRONTA** (meno ritardo, predefinita) o **PRECISA** (movimento ancora più fedele se il Bluetooth è irregolare). Con il programma 1.0 SOLCO segue solo la velocità: aggiorna il puck con il nuovo `solco-puck.bin`.
 
+## Puck con schermo (M5Stack StopWatch)
+
+Al posto dello stick si può usare un **M5Stack StopWatch** (C152). Fa tutto quello che fa il puck (il brano segue il disco, scratch compreso) e in più ha uno schermo tondo: BPM, pitch, tempo che manca, tonalità Camelot e forma d'onda del brano attorno al bordo. A disco fermo si sfogliano e si caricano i brani di SOLCO senza toccare il tablet. Mentre il disco gira le scritte restano dritte: lo schermo le gira al contrario di quanto gira il disco. **Non ancora provato con l'hardware vero.**
+
+![Schermate del puck con schermo](firmware/puck/schermate_stopwatch.png)
+
+**Serve:** 1 M5Stack StopWatch, il supporto stampato (`hardware/stampa/porta_stopwatch.stl`, PLA, senza supporti), biadesivo forte, il disco di controllo.
+
+1. **Programma** (una volta, dal Galaxy Book): scarica `solco-puck-stopwatch.bin` dall'ultima versione su GitHub. Collega lo StopWatch col cavo USB-C e mettilo in modalità di caricamento: tieni premuto il tasto di accensione per circa 2 secondi, finché si accende la luce verde interna, poi lascialo. Apri https://espressif.github.io/esptool-js/ in Chrome o Edge, premi *Connect* e scegli la porta, metti indirizzo `0x0` e il file `solco-puck-stopwatch.bin`, premi *Program*. Finito il caricamento, se lo schermo resta spento premi una volta il tasto di accensione. Lo schermo mostra «SOLCO», «In attesa del tablet» e il nome del puck («SOLCO Puck» e quattro cifre).
+2. **Montaggio:** incolla il supporto sull'etichetta del disco (come il porta-puck: foro largo, gira col disco e non col piatto) e appoggia lo StopWatch nella sede, schermo in su e presa USB-C verso l'apertura del bordo: si centra da solo e si ricarica senza toglierlo.
+3. **Collegamento:** come lo stick: SOLCO sul tablet → *Impostazioni → Comandi → CERCA PUCK* → tocca il puck. In *Impostazioni → Comandi* lo stato diventa «Puck collegato (con schermo)».
+4. **Calibrazione** (una volta): giradischi a 33 giri, pitch a 0, piatto in moto; tieni premuto il tasto **giallo (A)** per 2 secondi e non toccare niente per circa 8 secondi, finché compare «Calibrato a 33 giri». Prima della calibrazione lo schermo dice «DA CALIBRARE» e le scritte non girano.
+5. **Scritte dritte:** tieni premuto il tasto **blu (B)** e gira il disco a mano: le scritte girano col disco; lascia il tasto quando sono dritte davanti a te. Il puck se lo ricorda, ma all'accensione dopo non sa dove si è fermato il disco: se le scritte sono storte rifallo (due secondi). Il tasto blu premuto e lasciato subito azzera il giroscopio a piatto fermo, come sullo stick.
+
+**Sullo schermo:** l'anello è la forma d'onda del brano (colori come in SOLCO), la lineetta bianca è il punto in cui sei e la parte già suonata è più scura; negli ultimi secondi (avviso di fine brano di SOLCO) anello e tempo diventano rossi e lampeggiano. Al centro titolo, artista, BPM effettivo (col pitch), pitch, tempo che manca, tonalità, deck; in basso collegamento e batteria.
+
+**Scegliere un brano dal puck:** con il disco fermo premi il tasto **giallo (A)** (se nel deck non c'è ancora un brano basta toccare lo schermo). Si apre la lista, partendo dal brano caricato. **Gira il disco** (un brano ogni 15°) o scorri col dito; **tocca il brano al centro** per caricarlo. Tocca in alto per cambiare ordine (artista, titolo, BPM, Camelot, compatibili col brano caricato, ultimi aggiunti), in basso per scegliere il genere. Se il deck sta suonando il puck chiede conferma (CARICA / NO). Il tasto giallo o il blu chiudono la lista; si chiude da sola quando parte il giradischi o dopo 30 secondi senza toccarla. Con la lista aperta il disco scorre i brani e il brano nel deck resta fermo; chiusa la lista, il brano riparte da dove era, senza salti.
+
+**Tasti:** giallo (A) = lista dei brani, tenuto 2 s = calibrazione; blu (B) = chiude la lista o azzera il giroscopio, tenuto = scritte dritte; giallo + blu insieme = fotogrammi al secondo sullo schermo (per le prove); accensione premuto due volte di fila = spento. Si spegne da solo dopo 20 minuti senza tablet e col disco fermo.
+
+Da provare per primo, quando arriva: quanto sono fluide le scritte con il disco a 33 giri (giallo + blu mostra i fotogrammi al secondo), poi la lista dei brani e il caricamento.
+
 ## Jog, pulsanti e supporto da stampare
 
 Tutto in `hardware/`: lista della spesa senza saldature, piatti `.3mf` pronti per la stampante, montaggio e schema dei collegamenti (`hardware/README.md`). Il programma della scheda è in `firmware/`.
@@ -73,10 +95,10 @@ Tutto in `hardware/`: lista della spesa senza saldature, piatti `.3mf` pronti pe
 |---|---|
 | `web/` | L'app vera e propria (HTML, CSS, JavaScript). Motore audio in AudioWorklet (`js/worklet.js`), analisi dei brani in un Web Worker (`js/analysis.js`). |
 | `android/` | Contenitore Android: WebView a schermo intero, comandi MIDI via USB, selettore dei file. |
-| `tests/` | Test del motore audio e dell'analisi (`node tests/engine.test.js`, `node tests/analysis.test.js`), del firmware (`python3 tests/firmware_test.py`) e dell'interfaccia in Chrome headless: jog a schermo (`python3 tests/ui_jog_test.py`), filtro per genere (`python3 tests/ui_genre_test.py`), assegnazione di controller MIDI qualsiasi (`python3 tests/ui_midi_learn_test.py`), BPM scritto a mano (`python3 tests/ui_bpm_test.py`), giradischi con puck (`python3 tests/ui_turntable_test.py`), disposizione smartphone (`python3 tests/ui_phone_test.py`); simulazione dello scratch col Bluetooth (`node tests/vc_sim.js`). |
+| `tests/` | Test del motore audio e dell'analisi (`node tests/engine.test.js`, `node tests/analysis.test.js`), del firmware (`python3 tests/firmware_test.py`) e dell'interfaccia in Chrome headless: jog a schermo (`python3 tests/ui_jog_test.py`), filtro per genere (`python3 tests/ui_genre_test.py`), assegnazione di controller MIDI qualsiasi (`python3 tests/ui_midi_learn_test.py`), BPM scritto a mano (`python3 tests/ui_bpm_test.py`), giradischi con puck (`python3 tests/ui_turntable_test.py`), puck con schermo (`python3 tests/ui_puck_screen_test.py`), disposizione smartphone (`python3 tests/ui_phone_test.py`); simulazione dello scratch col Bluetooth (`node tests/vc_sim.js`); protocollo del puck con schermo, uguale in JavaScript e nel firmware (`node tests/puck_proto.test.js`), e schermate del puck simulate sul computer (`bash tests/build_puck_sim.sh`, poi `/tmp/puck_ui_sim cartella`). |
 | `hardware/` | Pezzi da stampare (`stampa/`), anteprime, generatore dei modelli (`cad/`). |
-| `firmware/` | Programma CircuitPython per il Pico H della jog. |
-| `.github/workflows/apk.yml` | Ogni modifica sul ramo `main` compila un nuovo `solco.apk` e lo pubblica tra le Releases. |
+| `firmware/` | Programma CircuitPython per il Pico H della jog; in `puck/` i programmi dei puck del giradischi (M5StickS3 e M5Stack StopWatch). |
+| `.github/workflows/apk.yml` | Ogni modifica sul ramo `main` compila `solco.apk`, `SOLCO-Setup.exe` e i programmi dei puck, e li pubblica tra le Releases. |
 
 La chiave di firma `android/solco.jks` serve solo a installare gli aggiornamenti sopra la versione precedente.
 

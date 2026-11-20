@@ -11,7 +11,7 @@
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const normTxt = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
-  const VERSION = '1.5.0';
+  const VERSION = '1.6.0';
   const LETTERS = 'ABCDEFGH';
   const HOT_COLORS = ['#ff4d5e', '#ff9f1c', '#ffd23f', '#34d77b', '#2fd0c2', '#4c8dff', '#8b6bff', '#ff5fb4'];
   const RANGES = [6, 8, 10, 16, 50];
@@ -59,7 +59,10 @@
     playSec: 0, countedPlay: false, cmdT: 0,
   };
   // giradischi con puck (firmware in /firmware/puck): il disco comanda il brano
-  const TT = { on: false, rpm: 0, rate: 0, disp: 1, bat: -1, flags: -1, last: 0, lost: false, uiT: 0, warnCal: false, warnBat: false };
+  const TT = { on: false, rpm: 0, rate: 0, disp: 1, bat: -1, flags: -1, last: 0, lost: false, uiT: 0, warnCal: false, warnBat: false,
+    browse: false, bA: null, aOff: 0 };   // puck con schermo: mentre sfogli, girare il disco scorre la lista e il brano sta fermo
+  // puck con schermo (M5Stack StopWatch): riceve BPM, tempo, tonalità e lista dei brani
+  const PL = { ready: false, model: 0, tseq: 0, lastRx: 0 };
   let tracks = [];
   const artUrls = new Map();
 
@@ -179,16 +182,24 @@
   // (come un DVS in modo relativo). Pitch del giradischi = tempo, disco fermo = brano fermo.
   const ttBase = () => (S.ttBase === 45 ? 45 : 100 / 3);
   midi.onPuck = (m) => {
+    PL.lastRx = performance.now();
     if (S.turntable === 'off') return;
     const now = performance.now();
     if (m.rpm !== undefined) {
-      TT.rpm = m.rpm; TT.last = now;
-      TT.rate = m.rpm / ttBase();
+      const rpm = TT.browse ? 0 : m.rpm;          // mentre sfogli dal puck il disco non comanda il brano
+      TT.rpm = rpm; TT.last = now;
+      TT.rate = rpm / ttBase();
       if (!TT.on) ttStart();
       if (TT.lost) { TT.lost = false; toast('Puck di nuovo collegato'); }
       // firmware 1.1: orario e angolo → il brano segue la posizione del disco; prima: solo la velocità
-      if (m.tp !== undefined) engine.send({ t: 'vcPt', tp: m.tp, a: m.a, w: m.rpm / 60, reset: m.reset });
-      else engine.send({ t: 'vcRate', r: TT.rate });
+      if (m.tp !== undefined) {
+        // sfogliando, l'angolo dato al motore resta fermo; alla fine si toglie il giro fatto: nessun salto
+        if (m.reset) { TT.aOff = 0; if (TT.bA !== null) TT.bA = m.a; }
+        let a = m.a;
+        if (TT.browse) { if (TT.bA === null) TT.bA = a; a = TT.bA; }
+        else if (TT.bA !== null) { TT.aOff += a - TT.bA; TT.bA = null; }
+        engine.send({ t: 'vcPt', tp: m.tp, a: a - TT.aOff, w: rpm / 60, reset: m.reset });
+      } else engine.send({ t: 'vcRate', r: TT.rate });
       // valore a schermo: a disco fermo resta l'ultimo, i cambi veri si seguono subito, il resto si ammorbidisce
       const absR = Math.abs(TT.rate), dd = Math.abs(absR - TT.disp);
       if (absR > 0.05) TT.disp += (absR - TT.disp) * (dd > 0.0035 ? 0.35 : 0.06);
@@ -222,8 +233,8 @@
   }
   function ttStatus() {
     if (!TT.on) return 'Nessun puck collegato';
-    return 'Puck collegato · ' + Math.abs(TT.rpm).toFixed(2) + ' giri' + (TT.bat >= 0 ? ' · batteria ' + TT.bat + '%' : '') +
-      (TT.flags >= 0 && !(TT.flags & 1) ? ' · da calibrare' : '') + (TT.lost ? ' · non risponde' : '');
+    return 'Puck collegato' + (PL.ready ? ' (con schermo)' : '') + ' · ' + Math.abs(TT.rpm).toFixed(2) + ' giri' + (TT.bat >= 0 ? ' · batteria ' + TT.bat + '%' : '') +
+      (TT.flags >= 0 && !(TT.flags & 1) ? ' · da calibrare' : '') + (TT.browse ? ' · sfoglia i brani' : '') + (TT.lost ? ' · non risponde' : '');
   }
   // se il puck tace (spento, fuori portata) si tiene l'ultima velocità: il brano non si ferma a metà mix
   setInterval(() => {
@@ -268,6 +279,126 @@
       try { window.SolcoAndroid.bleConnect(v, d ? d.name : ''); } catch (e) { toast('Collegamento non riuscito'); }
     }
   }
+
+  /* --------------- puck con schermo: BPM, tempo e lista dei brani sul puck --------------- */
+  // Il puck (firmware in /firmware/puck/solco_puck_sw) si presenta con HELLO; da lì SOLCO gli manda
+  // 10 volte al secondo lo stato del deck, e a ogni brano caricato titolo, tonalità e forma d'onda.
+  // Il puck chiede la lista ordinata (artista, titolo, BPM, Camelot, genere) e carica i brani.
+  const PP = SolcoMidi.PuckProto, PKC = PP.PK;
+  const PL_SORT = ['added', 'title', 'artist', 'bpm', 'key', 'bpm'];
+  const plSend = (b) => midi.puckSend(b);
+  const plPlayed = (t) => !!(t.lastPlayed && Date.now() - t.lastPlayed < 12 * 3600 * 1000);
+  function plStateMsg() {
+    const has = !!D.track;
+    const pos = has ? engine.estimate() / D.sr : 0, dur = has ? D.len / D.sr : 0;
+    const warn = !!(S.endWarn && has && D.playing && dur - pos < S.endWarn);
+    const flags = (has ? 1 : 0) | (D.playing ? 2 : 0) | (D.loop.on ? 4 : 0) | (warn ? 8 : 0) | (TT.on ? 16 : 0) | (S.keyLock ? 32 : 0) | (D.loading ? 64 : 0);
+    const pct = TT.on ? (TT.disp - 1) * 100 : D.pitch * RANGES[S.rangeIdx];
+    return PP.enc.state({ flags, pos: Math.round(Math.max(0, pos) * 10), dur: Math.round(dur * 10), bpm: has && D.bpm ? Math.round(D.bpm * tempoFactor() * 100) : 0,
+      pitch: Math.round(pct * 100), tseq: PL.tseq, deck: S.deck });
+  }
+  function plTrackMsg() {
+    const t = D.track;
+    return PP.enc.track({ tseq: PL.tseq, bpm: t && t.bpm ? Math.round(t.bpm * 100) : 0, cam: t ? PP.camCode(t.camelot) : 0,
+      dur: t ? Math.round(D.len / D.sr * 10) : 0, title: t ? t.title : '', artist: t ? t.artist : '', genre: t ? t.genre : '' });
+  }
+  // forma d'onda in 120 spicchi (anello attorno allo schermo): ampiezza 0-31 e banda prevalente (bassi, medi, alti)
+  function plWaveMsg() {
+    const w = D.wave, N = 120, bins = [];
+    if (D.track && w && w.lo && w.lo.length) {
+      const cols = w.lo.length;
+      for (let b = 0; b < N; b++) {
+        const a = Math.floor(b * cols / N), e = Math.max(a + 1, Math.floor((b + 1) * cols / N));
+        let lo = 0, mi = 0, hi = 0;
+        for (let i = a; i < e && i < cols; i++) { if (w.lo[i] > lo) lo = w.lo[i]; if (w.mi[i] > mi) mi = w.mi[i]; if (w.hi[i] > hi) hi = w.hi[i]; }
+        const v = [lo * BAND_SCALE[0], mi * BAND_SCALE[1], hi * BAND_SCALE[2]];
+        const band = v[0] >= v[1] && v[0] >= v[2] ? 0 : (v[1] >= v[2] ? 1 : 2);
+        bins.push(Math.min(31, Math.round(Math.max(v[0], v[1], v[2]) / 255 * 31)) | (band << 5));
+      }
+    }
+    return PP.enc.wave({ tseq: PL.tseq, bins });
+  }
+  function plTrackChanged() {
+    PL.tseq = (PL.tseq + 1) & 127;
+    if (!PL.ready) return;
+    plSend(plTrackMsg()); plSend(plWaveMsg()); plSend(plStateMsg());
+  }
+  function plTracks(sort, compat, genre) {
+    let arr = tracks.slice();
+    if (genre) {                                    // il nome arriva dal puck come lo ha mandato plGenres (24 caratteri)
+      const g = PP.asciiFold(genre, 24).toLowerCase();
+      arr = arr.filter((t) => PP.asciiFold((t.genre || '').trim(), 24).toLowerCase() === g);
+    }
+    if ((compat || sort === 5) && D.track) arr = arr.filter((t) => t.id !== D.track.id && compatible(D.track, t));
+    arr.sort(SORTS[PL_SORT[sort] || 'added']);
+    return arr;
+  }
+  function plList(m) {
+    const arr = plTracks(m.sort, m.compat, m.genre);
+    const total = Math.min(arr.length, PP.PK_NONE - 1);
+    const sel = D.track ? arr.findIndex((t) => t.id === D.track.id) : -1;
+    const count = Math.min(m.count || 0, 40);
+    let start = m.start === PP.PK_NONE ? Math.max(0, sel) - Math.floor(count / 2) : m.start;
+    start = Math.max(0, Math.min(start, total - count));
+    plSend(PP.enc.lhead({ req: m.req, total, sel: sel < 0 ? PP.PK_NONE : sel, sort: m.sort, compat: m.compat, genre: m.genre }));
+    const end = Math.min(total, start + count);
+    for (let i = start; i < end; i += 6) {
+      const items = arr.slice(i, Math.min(end, i + 6)).map((t) => ({
+        bpm: t.bpm ? Math.round(t.bpm * 10) : 0, cam: PP.camCode(t.camelot), dur: Math.round(t.duration || 0),
+        fl: (D.track && D.track.id === t.id ? 1 : 0) | (plPlayed(t) ? 2 : 0) | (t.analyzed ? 4 : 0),
+        id: t.id, title: t.title, artist: t.artist,
+      }));
+      plSend(PP.enc.litems({ req: m.req, start: i, items }));
+    }
+  }
+  function plGenres() {
+    const map = new Map();
+    tracks.forEach((t) => {
+      const name = PP.asciiFold((t.genre || '').trim(), 24);
+      if (!name) return;
+      const k = name.toLowerCase(), e = map.get(k) || { name, n: 0 };
+      e.n++; map.set(k, e);
+    });
+    // i 40 più usati, in ordine alfabetico
+    const list = [...map.values()].sort((a, b) => b.n - a.n).slice(0, 40).sort((a, b) => a.name.localeCompare(b.name, 'it'));
+    plSend(PP.enc.genres({ list }));
+  }
+  async function plLoad(m) {
+    const t = tracks.find((x) => x.id === m.id);
+    if (!t) { plSend(PP.enc.result({ code: 2, text: 'Brano non trovato' })); return; }
+    if (D.loading) { plSend(PP.enc.result({ code: 3, text: 'Sto gia caricando' })); return; }
+    if (D.playing && !m.force) { plSend(PP.enc.result({ code: 1, text: t.title })); return; }
+    const ok = await loadTrack(t, true);
+    plSend(PP.enc.result(ok ? { code: 0, text: t.title } : { code: 4, text: 'Caricamento non riuscito' }));
+  }
+  function plBrowse(on) {
+    if (TT.browse === on) return;
+    TT.browse = on;
+    const st = $('#ttStat'); if (st) st.textContent = ttStatus();
+  }
+  midi.onPuckMsg = (m) => {
+    PL.lastRx = performance.now();
+    switch (m.cmd) {
+      case PKC.HELLO:
+        PL.ready = true; PL.model = m.model;
+        plBrowse(false);
+        plSend(PP.enc.hellok({ deck: S.deck, version: VERSION }));
+        plSend(plTrackMsg()); plSend(plWaveMsg()); plSend(plStateMsg());
+        break;
+      case PKC.TREQ: plSend(plTrackMsg()); plSend(plWaveMsg()); break;
+      case PKC.LREQ: plList(m); break;
+      case PKC.GREQ: plGenres(); break;
+      case PKC.LOAD: plLoad(m); break;
+      case PKC.BROWSE: plBrowse(!!m.on); break;
+      default: break;
+    }
+  };
+  // stato del deck al puck 10 volte al secondo (finché il puck si fa sentire)
+  setInterval(() => {
+    if (!PL.ready) return;
+    if (performance.now() - PL.lastRx > 5000) { PL.ready = false; plBrowse(false); return; }
+    plSend(plStateMsg());
+  }, 100);
 
   /* ------------------------------ audio ------------------------------ */
   async function startAudio() {
@@ -323,12 +454,13 @@
   const saveTrack = (t) => lib.putTrack(stored(t)).catch(() => {});
 
   async function loadTrack(t, force) {
-    if (!t || D.loading) return;
+    if (!t || D.loading) return false;
     if (D.playing && !force) {
       const ok = await confirmBox('<h3>Stai suonando</h3>Il brano in onda verrà sostituito da <b>' + esc(t.title) + '</b>.', 'CARICA', 'ANNULLA');
-      if (!ok) return;
+      if (!ok) return false;
     }
-    if (!engine.running) { try { await startAudio(); } catch (e) { return; } }
+    if (!engine.running) { try { await startAudio(); } catch (e) { return false; } }
+    let loaded = false;
     D.loading = true;
     setBusy('Carico…');
     try {
@@ -365,12 +497,15 @@
       if (!$('#browser').classList.contains('hidden')) renderList();
       lib.setKV('lastTrack', t.id).catch(() => {});
       closeBrowser();
+      loaded = true;
     } catch (e) {
       toast('Impossibile caricare il brano: ' + (e && e.message || e), 4000);
     } finally {
       D.loading = false;
       setBusy(analysisBusyText());
     }
+    if (loaded) plTrackChanged();
+    return loaded;
   }
 
   /* ------------------------------ trasporto ------------------------------ */
@@ -1372,6 +1507,14 @@
     return bpmOk && (na === nb || (la === lb && (d === 1 || d === 11)));
   }
   function camOrder(t) { if (!t.camelot) return 99; return parseInt(t.camelot, 10) * 2 + (t.camelot.endsWith('B') ? 1 : 0); }
+  // ordini della lista (anche per il puck con schermo)
+  const SORTS = {
+    added: (a, b) => b.added - a.added,
+    title: (a, b) => normTxt(a.title).localeCompare(normTxt(b.title)),
+    artist: (a, b) => normTxt(a.artist).localeCompare(normTxt(b.artist)) || normTxt(a.title).localeCompare(normTxt(b.title)),
+    bpm: (a, b) => (a.bpm || 999) - (b.bpm || 999),
+    key: (a, b) => camOrder(a) - camOrder(b) || (a.bpm || 0) - (b.bpm || 0),
+  };
   function filtered() {
     let arr = tracks.slice();
     if (brQuery) {
@@ -1380,15 +1523,7 @@
     }
     if (brCompat && D.track) arr = arr.filter((t) => t.id !== D.track.id && compatible(D.track, t));
     if (brGenre) arr = arr.filter((t) => normTxt((t.genre || '').trim()) === brGenre);
-    const s = S.sort;
-    const cmp = {
-      added: (a, b) => b.added - a.added,
-      title: (a, b) => normTxt(a.title).localeCompare(normTxt(b.title)),
-      artist: (a, b) => normTxt(a.artist).localeCompare(normTxt(b.artist)) || normTxt(a.title).localeCompare(normTxt(b.title)),
-      bpm: (a, b) => (a.bpm || 999) - (b.bpm || 999),
-      key: (a, b) => camOrder(a) - camOrder(b) || (a.bpm || 0) - (b.bpm || 0),
-    }[s] || ((a, b) => b.added - a.added);
-    arr.sort(cmp);
+    arr.sort(SORTS[S.sort] || SORTS.added);
     return arr;
   }
   function rowHTML(t) {
@@ -1822,6 +1957,6 @@
     if (!open) toast('Per uscire usa il tasto Home');
     return true;
   };
-  window.solco = { D, S, engine, midi, loadTrack, importFiles, tracks: () => tracks, onControl, setBpm, RANGES, TT };
+  window.solco = { D, S, engine, midi, loadTrack, importFiles, tracks: () => tracks, onControl, setBpm, RANGES, TT, PL };
   init();
 })();
